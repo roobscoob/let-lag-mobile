@@ -1,3 +1,0 @@
-namespace jet_lag_core {
-  string hello_from_rust();
-};

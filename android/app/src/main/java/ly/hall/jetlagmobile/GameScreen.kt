@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import ly.hall.jetlagmobile.ui.theme.JetLagMobileTheme
+import uniffi.jet_lag_mobile.helloFromRust
 
 class GameScreen : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -21,7 +22,7 @@ class GameScreen : ComponentActivity() {
             JetLagMobileTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     Greeting(
-                        name = "Android",
+                        name = helloFromRust(),
                         modifier = Modifier.padding(innerPadding)
                     )
                 }
@@ -33,7 +34,7 @@ class GameScreen : ComponentActivity() {
 @Composable
 fun Greeting(name: String, modifier: Modifier = Modifier) {
     Text(
-        text = "Hello $name!",
+        text = name,
         modifier = modifier
     )
 }

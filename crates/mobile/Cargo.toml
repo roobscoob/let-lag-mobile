@@ -9,6 +9,3 @@ name = "jet_lag_mobile"
 
 [dependencies]
 uniffi = "0.30"
-
-[build-dependencies]
-uniffi = { version = "0.30", features = ["build"] }

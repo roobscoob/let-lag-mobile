@@ -1,3 +1,9 @@
 [workspace]
-members = ["crates/server", "crates/core", "crates/mobile", "crates/api-types"]
+members = [
+    "crates/server",
+    "crates/core",
+    "crates/mobile",
+    "crates/api-types",
+    "crates/uniffi-bindgen",
+]
 resolver = "2"
