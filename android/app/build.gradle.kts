@@ -77,6 +77,7 @@ tasks.matching { it.name.startsWith("compile") && it.name.contains("Kotlin") }.c
 
 dependencies {
     implementation(libs.jna) { artifact { type = "aar" } }
+    implementation(libs.maplibre.android)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)

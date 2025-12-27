@@ -5,44 +5,65 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import ly.hall.jetlagmobile.ui.theme.JetLagMobileTheme
-import uniffi.jet_lag_mobile.helloFromRust
+import org.maplibre.android.MapLibre
+import org.maplibre.android.maps.MapLibreMapOptions
+import org.maplibre.android.maps.MapView
 
 class GameScreen : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        MapLibre.getInstance(this)
         enableEdgeToEdge()
-        setContent {
-            JetLagMobileTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = helloFromRust(),
-                        modifier = Modifier.padding(innerPadding)
-                    )
+        setContent { JetLagMobileTheme { MapLibreMap(modifier = Modifier.fillMaxSize()) } }
+    }
+}
+
+@Composable
+fun MapLibreMap(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    val mapView = remember {
+        val options =
+                MapLibreMapOptions.createFromAttributes(context).apply {
+                    compassEnabled(false)
+                    // need attribution on a splash screen tho
+                    attributionEnabled(false)
+                    logoEnabled(false)
                 }
-            }
+
+        MapView(context, options).apply {
+            getMapAsync { map -> map.setStyle("https://tiles.openfreemap.org/styles/bright") }
         }
     }
-}
 
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = name,
-        modifier = modifier
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    JetLagMobileTheme {
-        Greeting("Android")
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> mapView.onStart()
+                Lifecycle.Event.ON_RESUME -> mapView.onResume()
+                Lifecycle.Event.ON_PAUSE -> mapView.onPause()
+                Lifecycle.Event.ON_STOP -> mapView.onStop()
+                Lifecycle.Event.ON_DESTROY -> mapView.onDestroy()
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            mapView.onDestroy()
+        }
     }
+
+    AndroidView(factory = { mapView }, modifier = modifier)
 }
