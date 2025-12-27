@@ -55,10 +55,10 @@ val generateUniFFIBindings by tasks.registering(Exec::class) {
 
     workingDir = workspaceDir
 
-    val isWindows = System.getProperty("os.name").lowercase().contains("windows")
-    val libExtension = if (isWindows) "dll" else if (System.getProperty("os.name").lowercase().contains("mac")) "dylib" else "so"
-    val libPath = workspaceDir.resolve("target/release/jet_lag_mobile.$libExtension")
+    // Use the Android arm64 library for binding generation (any arch works, just need the metadata)
+    val libPath = workspaceDir.resolve("target/aarch64-linux-android/release/libjet_lag_mobile.so")
 
+    val isWindows = System.getProperty("os.name").lowercase().contains("windows")
     if (isWindows) {
         commandLine("cmd", "/c", "cargo run -p uniffi-bindgen -- generate --library $libPath --language kotlin --out-dir ${bindgenDir.get().asFile.absolutePath}")
     } else {

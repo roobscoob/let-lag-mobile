@@ -18,6 +18,8 @@ import ly.hall.jetlagmobile.ui.theme.JetLagMobileTheme
 import org.maplibre.android.MapLibre
 import org.maplibre.android.maps.MapLibreMapOptions
 import org.maplibre.android.maps.MapView
+import org.maplibre.android.maps.Style
+import uniffi.jet_lag_mobile.ViewState
 
 class GameScreen : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -33,6 +35,10 @@ fun MapLibreMap(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
+    // Create ViewState from Rust
+    val viewState = remember { ViewState() }
+    val styleJson = remember(viewState) { viewState.getStyle() }
+
     val mapView = remember {
         val options =
                 MapLibreMapOptions.createFromAttributes(context).apply {
@@ -43,7 +49,7 @@ fun MapLibreMap(modifier: Modifier = Modifier) {
                 }
 
         MapView(context, options).apply {
-            getMapAsync { map -> map.setStyle("https://tiles.openfreemap.org/styles/bright") }
+            getMapAsync { map -> map.setStyle(Style.Builder().fromJson(styleJson)) }
         }
     }
 
@@ -62,6 +68,7 @@ fun MapLibreMap(modifier: Modifier = Modifier) {
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             mapView.onDestroy()
+            viewState.destroy()
         }
     }
 
