@@ -1,0 +1,14 @@
+[package]
+name = "jet-lag-mobile"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+name = "jet_lag_mobile"
+
+[dependencies]
+uniffi = "0.30"
+
+[build-dependencies]
+uniffi = { version = "0.30", features = ["build"] }
