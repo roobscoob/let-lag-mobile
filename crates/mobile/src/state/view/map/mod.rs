@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::tile_server::TileServer;
 
-const DEFAULT_STYLE: &str = include_str!("../../../../assets/bright.json");
+const DEFAULT_STYLE: &str = include_str!("../../../../assets/libre-theme.json");
 const TILES_DIR: &str = "/path/to/tiles"; // Hardcoded for now
 
 #[derive(uniffi::Object)]
