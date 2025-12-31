@@ -1,6 +1,7 @@
 package ly.hall.jetlagmobile
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -33,8 +34,36 @@ class GameScreen : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         MapLibre.getInstance(this)
+
+        // Force connectivity to always be true
+        forceConnectivity(this)
+
         enableEdgeToEdge()
         setContent { JetLagMobileTheme { MapLibreMap(modifier = Modifier.fillMaxSize()) } }
+    }
+
+    private fun forceConnectivity(context: android.content.Context) {
+        try {
+            val receiverClass = Class.forName("org.maplibre.android.net.ConnectivityReceiver")
+            val instanceMethod =
+                    receiverClass.getMethod("instance", android.content.Context::class.java)
+            val receiver = instanceMethod.invoke(null, context)
+
+            // Use setConnected method (it exists!)
+            val setConnectedMethod =
+                    receiverClass.getDeclaredMethod("setConnected", Boolean::class.javaObjectType)
+            setConnectedMethod.isAccessible = true
+            setConnectedMethod.invoke(receiver, true)
+
+            Log.i("ConnectivityFix", "Successfully forced connectivity to true")
+
+            // Verify it worked
+            val isConnectedMethod = receiverClass.getMethod("isConnected")
+            val currentState = isConnectedMethod.invoke(receiver) as Boolean
+            Log.i("ConnectivityFix", "Current connected state: $currentState")
+        } catch (e: Exception) {
+            Log.e("ConnectivityFix", "Error forcing connectivity", e)
+        }
     }
 }
 
@@ -42,7 +71,7 @@ class GameScreen : ComponentActivity() {
 fun MapLibreMap(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val viewState = remember { ViewState() }
+    val viewState = remember { ViewState(context.filesDir.absolutePath) }
     var mapState by remember { mutableStateOf<MapState?>(null) }
     var map by remember { mutableStateOf<MapLibreMap?>(null) }
 
@@ -63,10 +92,10 @@ fun MapLibreMap(modifier: Modifier = Modifier) {
                     logoEnabled(false)
                     // Set initial camera to Central Park, NYC
                     camera(
-                        CameraPosition.Builder()
-                            .target(LatLng(40.7571418, -73.9805655))
-                            .zoom(12.0)
-                            .build()
+                            CameraPosition.Builder()
+                                    .target(LatLng(40.7571418, -73.9805655))
+                                    .zoom(12.0)
+                                    .build()
                     )
                 }
 
@@ -84,7 +113,9 @@ fun MapLibreMap(modifier: Modifier = Modifier) {
                 else -> {}
             }
         }
+
         lifecycleOwner.lifecycle.addObserver(observer)
+
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             mapView.onDestroy()

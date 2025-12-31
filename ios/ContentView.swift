@@ -1,86 +1,98 @@
-//
-//  ContentView.swift
-//  jetlagios
-//
-//  Created by Mac Studio on 12/30/25.
-//
-
 import SwiftUI
-import CoreData
+import MapLibre
 
 struct ContentView: View {
-    @Environment(\.managedObjectContext) private var viewContext
-
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Item.timestamp, ascending: true)],
-        animation: .default)
-    private var items: FetchedResults<Item>
+    @State private var styleURL: URL?
+    @State private var errorMessage: String?
+    @State private var mapState: MapState?  // Keep alive to maintain tile server
 
     var body: some View {
-        NavigationView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Bite'em at \(item.timestamp!, formatter: itemFormatter)")
-                    } label: {
-                        Text(item.timestamp!, formatter: itemFormatter)
-                    }
+        ZStack {
+            if let styleURL = styleURL {
+                MapLibreMapView(styleURL: styleURL)
+            } else if let error = errorMessage {
+                VStack {
+                    Text("Failed to load map")
+                        .font(.headline)
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                        .padding()
                 }
-                .onDelete(perform: deleteItems)
+            } else {
+                ProgressView("Loading map...")
             }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
-                }
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
-                    }
-                }
-            }
-            Text("Select an item")
+        }
+        .ignoresSafeArea()
+        .background(Color.white)
+        .task {
+            await loadStyle()
         }
     }
 
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(context: viewContext)
-            newItem.timestamp = Date()
+    private func loadStyle() async {
+        do {
+            let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.path
 
-            do {
-                try viewContext.save()
-            } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
+            initPanicHandler()
+
+            let viewState = ViewState(basePath: documentsPath)
+            let state = try await viewState.getMapState()
+            let styleJson = state.getStyle()
+
+            guard let styleData = styleJson.data(using: .utf8) else {
+                errorMessage = "Failed to convert style JSON to data"
+                return
             }
-        }
-    }
 
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            offsets.map { items[$0] }.forEach(viewContext.delete)
+            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("style.json")
+            try styleData.write(to: tempURL)
 
-            do {
-                try viewContext.save()
-            } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
-            }
+            // Store mapState to keep tile server running
+            mapState = state
+            styleURL = tempURL
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 }
 
-private let itemFormatter: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.dateStyle = .short
-    formatter.timeStyle = .medium
-    return formatter
-}()
+struct MapLibreMapView: UIViewRepresentable {
+    let styleURL: URL
+
+    func makeUIView(context: Context) -> MLNMapView {
+        let mapView = MLNMapView(frame: .zero, styleURL: styleURL)
+        mapView.delegate = context.coordinator
+        mapView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        mapView.backgroundColor = .white
+
+        mapView.setCenter(
+            CLLocationCoordinate2D(latitude: 40.7571418, longitude: -73.9805655),
+            zoomLevel: 12,
+            animated: false
+        )
+
+        mapView.compassView.isHidden = true
+        mapView.logoView.isHidden = true
+        mapView.attributionButton.isHidden = true
+
+        return mapView
+    }
+
+    func updateUIView(_ mapView: MLNMapView, context: Context) {
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    class Coordinator: NSObject, MLNMapViewDelegate {
+        func mapViewDidFailLoadingMap(_ mapView: MLNMapView, withError error: Error) {
+            print("Map failed to load: \(error)")
+        }
+    }
+}
 
 #Preview {
-    ContentView().environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
+    ContentView()
 }

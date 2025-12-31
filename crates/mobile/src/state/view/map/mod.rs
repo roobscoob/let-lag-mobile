@@ -19,8 +19,18 @@ pub struct MapState {
 impl MapState {
     pub async fn new(source: MapSource) -> Result<Self, TileServerError> {
         let tile_server = TileServer::start(PathBuf::from(source.pmtiles_path))?;
-        let mask_geojson = std::fs::read_to_string(source.bounds_path)?;
-        let style_json = build_style(DEFAULT_STYLE, tile_server.port(), &mask_geojson);
+        let mask_geojson = std::fs::read_to_string(&source.bounds_path).map_err(|e| {
+            std::io::Error::new(e.kind(), format!("{e} (file: {:?})", source.bounds_path))
+        })?;
+        let complexes_geojson = std::fs::read_to_string(&source.complexes_path).map_err(|e| {
+            std::io::Error::new(e.kind(), format!("{e} (file: {:?})", source.complexes_path))
+        })?;
+        let style_json = build_style(
+            DEFAULT_STYLE,
+            tile_server.port(),
+            &mask_geojson,
+            &complexes_geojson,
+        );
 
         Ok(Self {
             style_json,
@@ -36,7 +46,7 @@ impl MapState {
     }
 }
 
-fn build_style(base_style: &str, port: u16, mask_geojson: &str) -> String {
+fn build_style(base_style: &str, port: u16, mask_geojson: &str, complexes_geojson: &str) -> String {
     let mut style: serde_json::Value = serde_json::from_str(base_style).unwrap();
 
     // Set initial map center to Central Park, NYC
@@ -59,16 +69,13 @@ fn build_style(base_style: &str, port: u16, mask_geojson: &str) -> String {
             }
         }
 
-        // Add the play area mask source
-        if let Some(complexes_geojson) = parse_mask_geojson(
-            &std::fs::read_to_string("/data/data/ly.hall.jetlagmobile/files/complexes.geojson")
-                .unwrap(),
-        ) {
+        // Add the complexes source
+        if let Some(complexes_data) = parse_mask_geojson(complexes_geojson) {
             sources.insert(
                 "complexes".to_string(),
                 serde_json::json!({
                     "type": "geojson",
-                    "data": complexes_geojson
+                    "data": complexes_data
                 }),
             );
         }

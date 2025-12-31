@@ -15,14 +15,16 @@ pub enum MapError {
 
 #[derive(uniffi::Object)]
 pub struct ViewState {
+    base_path: String,
     map: RwLock<Option<Arc<MapState>>>,
 }
 
 #[uniffi::export]
 impl ViewState {
     #[uniffi::constructor]
-    pub fn new() -> Self {
+    pub fn new(base_path: String) -> Self {
         Self {
+            base_path,
             map: RwLock::new(None),
         }
     }
@@ -34,7 +36,7 @@ impl ViewState {
 
         let mut guard = self.map.write().await;
         let new_map = Arc::new(
-            MapState::new(MapSource::nyc())
+            MapState::new(MapSource::nyc(self.base_path.clone()))
                 .await
                 .map_err(|e| MapError::TileServer(e.to_string()))?,
         );

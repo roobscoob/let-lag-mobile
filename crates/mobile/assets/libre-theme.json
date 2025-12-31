@@ -535,7 +535,8 @@
             "type": "fill",
             "source": "complexes",
             "paint": {
-                "fill-color": "#dac79d"
+                "fill-color": "#365779",
+                "fill-opacity": 0.6
             }
         }
     ],
