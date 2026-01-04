@@ -32,6 +32,33 @@ impl SdfCompiler {
         output
     }
 
+    pub fn point_cloud(&mut self, points: Vec<super::types::Position>) -> Register {
+        let output = self.allocate_register();
+
+        self.instructions
+            .push(super::instruction::SdfInstruction::PointCloud { points, output });
+
+        output
+    }
+
+    pub fn line(&mut self, start: super::types::Position, end: super::types::Position) -> Register {
+        let output = self.allocate_register();
+
+        self.instructions
+            .push(super::instruction::SdfInstruction::Line { start, end, output });
+
+        output
+    }
+
+    pub fn line_string(&mut self, points: Vec<super::types::Position>) -> Register {
+        let output = self.allocate_register();
+
+        self.instructions
+            .push(super::instruction::SdfInstruction::LineString { points, output });
+
+        output
+    }
+
     pub fn union(&mut self, shapes: Vec<Register>) -> Register {
         let output = self.allocate_register();
 
@@ -92,13 +119,19 @@ impl SdfCompiler {
         output
     }
 
-    pub fn boundary(&mut self, inside: Register, outside: Register) -> Register {
+    pub fn boundary(
+        &mut self,
+        inside: Register,
+        outside: Register,
+        overlap_resolution: super::instruction::BoundaryOverlapResolution,
+    ) -> Register {
         let output = self.allocate_register();
 
         self.instructions
             .push(super::instruction::SdfInstruction::Boundary {
                 inside,
                 outside,
+                overlap_resolution,
                 output,
             });
 

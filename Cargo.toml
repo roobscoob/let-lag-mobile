@@ -5,6 +5,6 @@ members = [
     "crates/mobile",
     "crates/api-types",
     "crates/uniffi-bindgen",
-    "tools/pmtiles-clip",
+    "tools/pmtiles-clip", "tools/mountain-kml-parser", "tools/osm-landmass",
 ]
 resolver = "2"

@@ -5,9 +5,29 @@ use crate::shape::{
     types::{Centimeters, Position},
 };
 
+#[repr(u8)]
+pub enum BoundaryOverlapResolution {
+    Inside = 1,
+    Outside = 2,
+    Midpoint = 3,
+}
+
 pub enum SdfInstruction {
     Point {
         position: Position,
+        output: Register,
+    },
+    PointCloud {
+        points: Vec<Position>,
+        output: Register,
+    },
+    Line {
+        start: Position,
+        end: Position,
+        output: Register,
+    },
+    LineString {
+        points: Vec<Position>,
         output: Register,
     },
     Union {
@@ -36,6 +56,7 @@ pub enum SdfInstruction {
     Boundary {
         inside: Register,
         outside: Register,
+        overlap_resolution: BoundaryOverlapResolution,
         output: Register,
     },
     LoadVdg {

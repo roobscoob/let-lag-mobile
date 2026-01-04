@@ -1,0 +1,7 @@
+[package]
+name = "mountain-kml-parser"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+roxmltree = "0.21.1"
