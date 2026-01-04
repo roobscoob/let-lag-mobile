@@ -1,3 +1,4 @@
+pub mod render;
 pub mod state;
 pub(crate) mod tile_server;
 pub mod render;

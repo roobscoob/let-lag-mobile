@@ -86,7 +86,7 @@ pub enum MatchingTarget {
 
     // "Is your nearest park {}?"
     Park {
-        osm_poi_park_id: i64,
+        osm_relation_park_id: i64,
     },
 
     // Places of Interest
@@ -158,9 +158,9 @@ impl Shape for MatchingQuestionShape {
                         if airport.icao.as_ref() == icao.as_ref()
                             && (iata.is_none() || airport.iata.as_ref() == iata.as_ref())
                         {
-                            Some(airport.position)
-                        } else {
                             None
+                        } else {
+                            Some(airport.position)
                         }
                     })
                     .collect();
@@ -233,19 +233,398 @@ impl Shape for MatchingQuestionShape {
                     .street_or_path(*osm_way_id)
                     .expect("Invalid `osm_way_id`. Malicious player? TODO: Graceful handling.");
 
-                // early return custom shape.
+                let way = compiler.line_string(way.positions);
 
-                let way = compiler.line_string(way);
+                if matches!(self.answer, MatchingQuestionAnswer::Yes) {
+                    return compiler.dilate(
+                        way,
+                        self.context
+                            .game_state()
+                            .hider_max_distance_to_street_or_path(),
+                    );
+                }
 
-                return compiler.dilate(
-                    way,
-                    self.context
-                        .game_state()
-                        .hider_max_distance_to_street_or_path(),
-                );
+                let mut nearby: Vec<_> = self
+                    .context
+                    .nearby_streets_and_paths(
+                        *osm_way_id,
+                        self.context
+                            .game_state()
+                            .hider_max_distance_to_street_or_path(),
+                    )
+                    .into_iter()
+                    .map(|way| compiler.line_string(way.positions))
+                    .collect();
+
+                let not_way = compiler.invert(way);
+
+                nearby.push(not_way);
+
+                return compiler.union(nearby);
             }
 
-            _ => unimplemented!(),
+            MatchingTarget::FirstAdministrativeDivision { osm_relation_id } => {
+                let vdg = compiler.with_vdg(Arc::new(
+                    self.context
+                        .first_administrative_division(*osm_relation_id)
+                        .expect(
+                            "Invalid `osm_relation_id`. Malicious player? TODO: Graceful handling.",
+                        )
+                        .boundary,
+                ));
+
+                return match self.answer {
+                    MatchingQuestionAnswer::Yes => vdg,
+                    MatchingQuestionAnswer::No => compiler.invert(vdg),
+                };
+            }
+
+            MatchingTarget::SecondAdministrativeDivision { osm_relation_id } => {
+                let vdg = compiler.with_vdg(Arc::new(
+                    self.context
+                        .second_administrative_division(*osm_relation_id)
+                        .expect(
+                            "Invalid `osm_relation_id`. Malicious player? TODO: Graceful handling.",
+                        )
+                        .boundary,
+                ));
+
+                return match self.answer {
+                    MatchingQuestionAnswer::Yes => vdg,
+                    MatchingQuestionAnswer::No => compiler.invert(vdg),
+                };
+            }
+
+            MatchingTarget::ThirdAdministrativeDivision { osm_relation_id } => {
+                let vdg = compiler.with_vdg(Arc::new(
+                    self.context
+                        .third_administrative_division(*osm_relation_id)
+                        .expect(
+                            "Invalid `osm_relation_id`. Malicious player? TODO: Graceful handling.",
+                        )
+                        .boundary,
+                ));
+
+                return match self.answer {
+                    MatchingQuestionAnswer::Yes => vdg,
+                    MatchingQuestionAnswer::No => compiler.invert(vdg),
+                };
+            }
+
+            MatchingTarget::FourthAdministrativeDivision { osm_relation_id } => {
+                let vdg = compiler.with_vdg(Arc::new(
+                    self.context
+                        .fourth_administrative_division(*osm_relation_id)
+                        .expect(
+                            "Invalid `osm_relation_id`. Malicious player? TODO: Graceful handling.",
+                        )
+                        .boundary,
+                ));
+
+                return match self.answer {
+                    MatchingQuestionAnswer::Yes => vdg,
+                    MatchingQuestionAnswer::No => compiler.invert(vdg),
+                };
+            }
+
+            MatchingTarget::Mountain { id, name } => {
+                let mut other_points = self
+                    .context
+                    .all_mountains()
+                    .iter()
+                    .filter_map(|mountain| {
+                        if mountain.name.as_ref() == name.as_ref()
+                            && (id.is_none() || mountain.id.as_ref() == id.as_ref())
+                        {
+                            None
+                        } else {
+                            Some(mountain.position)
+                        }
+                    })
+                    .collect();
+
+                let question_point = self.context.all_mountains().iter().find(|mountain| {
+                    mountain.name.as_ref() == name.as_ref()
+                        && (id.is_none() || mountain.id.as_ref() == id.as_ref())
+                });
+
+                (
+                    compiler.point_cloud(other_points),
+                    compiler.point(question_point.unwrap().position),
+                )
+            }
+
+            MatchingTarget::Landmass { .. } => todo!(),
+
+            MatchingTarget::Park {
+                osm_relation_park_id,
+            } => {
+                let mut other_points = self
+                    .context
+                    .all_parks()
+                    .iter()
+                    .filter_map(|park| {
+                        if park.osm_relation_id == *osm_relation_park_id {
+                            None
+                        } else {
+                            Some(park)
+                        }
+                    })
+                    .collect();
+
+                let question_point = self
+                    .context
+                    .all_parks()
+                    .iter()
+                    .find(|park| park.osm_relation_id == *osm_relation_park_id);
+
+                (
+                    compiler.point_cloud(other_points),
+                    compiler.point(question_point.unwrap().boundary.centroid()),
+                )
+            }
+
+            MatchingTarget::AmusementPark {
+                osm_poi_theme_park_id,
+            } => {
+                let mut other_points = self
+                    .context
+                    .all_amusement_parks()
+                    .iter()
+                    .filter_map(|poi| {
+                        if poi.osm_id == *osm_poi_theme_park_id {
+                            None
+                        } else {
+                            Some(poi.position)
+                        }
+                    })
+                    .collect();
+
+                let question_point = self
+                    .context
+                    .all_amusement_parks()
+                    .iter()
+                    .find(|poi| poi.osm_id == *osm_poi_theme_park_id);
+
+                (
+                    compiler.point_cloud(other_points),
+                    compiler.point(question_point.unwrap().position),
+                )
+            }
+
+            MatchingTarget::Zoo { osm_poi_zoo_id } => {
+                let mut other_points = self
+                    .context
+                    .all_zoos()
+                    .iter()
+                    .filter_map(|poi| {
+                        if poi.osm_id == *osm_poi_zoo_id {
+                            None
+                        } else {
+                            Some(poi.position)
+                        }
+                    })
+                    .collect();
+
+                let question_point = self
+                    .context
+                    .all_zoos()
+                    .iter()
+                    .find(|poi| poi.osm_id == *osm_poi_zoo_id);
+
+                (
+                    compiler.point_cloud(other_points),
+                    compiler.point(question_point.unwrap().position),
+                )
+            }
+
+            MatchingTarget::Aquarium {
+                osm_poi_aquarium_id,
+            } => {
+                let mut other_points = self
+                    .context
+                    .all_aquariums()
+                    .iter()
+                    .filter_map(|poi| {
+                        if poi.osm_id == *osm_poi_aquarium_id {
+                            None
+                        } else {
+                            Some(poi.position)
+                        }
+                    })
+                    .collect();
+
+                let question_point = self
+                    .context
+                    .all_aquariums()
+                    .iter()
+                    .find(|poi| poi.osm_id == *osm_poi_aquarium_id);
+
+                (
+                    compiler.point_cloud(other_points),
+                    compiler.point(question_point.unwrap().position),
+                )
+            }
+
+            MatchingTarget::GolfCourse { osm_poi_golf_id } => {
+                let mut other_points = self
+                    .context
+                    .all_golf_courses()
+                    .iter()
+                    .filter_map(|poi| {
+                        if poi.osm_id == *osm_poi_golf_id {
+                            None
+                        } else {
+                            Some(poi.position)
+                        }
+                    })
+                    .collect();
+
+                let question_point = self
+                    .context
+                    .all_golf_courses()
+                    .iter()
+                    .find(|poi| poi.osm_id == *osm_poi_golf_id);
+
+                (
+                    compiler.point_cloud(other_points),
+                    compiler.point(question_point.unwrap().position),
+                )
+            }
+
+            MatchingTarget::Museum { osm_poi_museum_id } => {
+                let mut other_points = self
+                    .context
+                    .all_museums()
+                    .iter()
+                    .filter_map(|poi| {
+                        if poi.osm_id == *osm_poi_museum_id {
+                            None
+                        } else {
+                            Some(poi.position)
+                        }
+                    })
+                    .collect();
+
+                let question_point = self
+                    .context
+                    .all_museums()
+                    .iter()
+                    .find(|poi| poi.osm_id == *osm_poi_museum_id);
+
+                (
+                    compiler.point_cloud(other_points),
+                    compiler.point(question_point.unwrap().position),
+                )
+            }
+
+            MatchingTarget::MovieTheater { osm_poi_cinema_id } => {
+                let mut other_points = self
+                    .context
+                    .all_movie_theaters()
+                    .iter()
+                    .filter_map(|poi| {
+                        if poi.osm_id == *osm_poi_cinema_id {
+                            None
+                        } else {
+                            Some(poi.position)
+                        }
+                    })
+                    .collect();
+
+                let question_point = self
+                    .context
+                    .all_movie_theaters()
+                    .iter()
+                    .find(|poi| poi.osm_id == *osm_poi_cinema_id);
+
+                (
+                    compiler.point_cloud(other_points),
+                    compiler.point(question_point.unwrap().position),
+                )
+            }
+
+            MatchingTarget::Hospital {
+                osm_poi_hospital_id,
+            } => {
+                let mut other_points = self
+                    .context
+                    .all_hospitals()
+                    .iter()
+                    .filter_map(|poi| {
+                        if poi.osm_id == *osm_poi_hospital_id {
+                            None
+                        } else {
+                            Some(poi.position)
+                        }
+                    })
+                    .collect();
+
+                let question_point = self
+                    .context
+                    .all_hospitals()
+                    .iter()
+                    .find(|poi| poi.osm_id == *osm_poi_hospital_id);
+
+                (
+                    compiler.point_cloud(other_points),
+                    compiler.point(question_point.unwrap().position),
+                )
+            }
+
+            MatchingTarget::Library { osm_poi_library_id } => {
+                let mut other_points = self
+                    .context
+                    .all_libraries()
+                    .iter()
+                    .filter_map(|poi| {
+                        if poi.osm_id == *osm_poi_library_id {
+                            None
+                        } else {
+                            Some(poi.position)
+                        }
+                    })
+                    .collect();
+
+                let question_point = self
+                    .context
+                    .all_libraries()
+                    .iter()
+                    .find(|poi| poi.osm_id == *osm_poi_library_id);
+
+                (
+                    compiler.point_cloud(other_points),
+                    compiler.point(question_point.unwrap().position),
+                )
+            }
+
+            MatchingTarget::ForeignConsulate {
+                osm_poi_office_diplomatic_id,
+            } => {
+                let mut other_points = self
+                    .context
+                    .all_foreign_consulates()
+                    .iter()
+                    .filter_map(|poi| {
+                        if poi.osm_id == *osm_poi_office_diplomatic_id {
+                            None
+                        } else {
+                            Some(poi.position)
+                        }
+                    })
+                    .collect();
+
+                let question_point = self
+                    .context
+                    .all_foreign_consulates()
+                    .iter()
+                    .find(|poi| poi.osm_id == *osm_poi_office_diplomatic_id);
+
+                (
+                    compiler.point_cloud(other_points),
+                    compiler.point(question_point.unwrap().position),
+                )
+            }
         };
 
         match self.answer {
