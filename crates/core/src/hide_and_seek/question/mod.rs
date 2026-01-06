@@ -1,12 +1,16 @@
-use crate::hide_and_seek::question::{
-    matching::MatchingQuestion, measuring::MeasuringQuestion, radar::RadarQuestion,
-    thermometer::ThermometerQuestion,
+use crate::{
+    hide_and_seek::question::{
+        context::QuestionContext, matching::MatchingQuestion, measuring::MeasuringQuestion,
+        radar::RadarQuestion, tentacle::TentacleQuestion, thermometer::ThermometerQuestion,
+    },
+    shape::compiler::Register,
 };
 
 pub mod context;
 pub mod matching;
 pub mod measuring;
 pub mod radar;
+pub mod tentacle;
 pub mod thermometer;
 
 pub enum AnyQuestion {
@@ -14,12 +18,29 @@ pub enum AnyQuestion {
     Measuring(MeasuringQuestion),
     Thermometer(ThermometerQuestion),
     Radar(RadarQuestion),
-    // Tentacle(TentacleQuestion),
+    Tentacle(TentacleQuestion),
     // Photo(PhotoQuestion),
 }
 
+pub enum ShapeErrorClass {
+    Uncomputable,
+    MissingData,
+}
+
+pub struct ShapeError {
+    pub message: String,
+    pub class: ShapeErrorClass,
+}
+
 pub trait Question {
+    type Answer;
+
     fn as_any(&self) -> AnyQuestion;
+    fn to_shape(
+        &self,
+        answer: Self::Answer,
+        context: Box<dyn QuestionContext>,
+    ) -> Result<Register, ShapeError>;
 }
 
 // the questions are:
