@@ -15,7 +15,6 @@ osmpbf = "0.3"
 # Geometry operations
 geo = "0.28"
 geo-types = "0.7"
-i_overlay = "1.9"
 
 # Output
 geojson = "0.24"

@@ -8,10 +8,14 @@ boostvoronoi = "0.12.1"
 bytes = "1"
 futures-core = "0.3"
 futures-util = "0.3"
+geo = "0.32.0"
+geojson = "0.24.2"
 glam = "0.30.9"
 reqwest = { version = "0.13", features = ["json", "stream"] }
+rusqlite = { version = "0.38.0", features = ["modern-full"] }
 serde = { version = "1", features = ["derive"] }
 strum = { version = "0.27.2", features = ["derive", "phf", "strum_macros"] }
+tokio = { version = "1.49.0", features = ["full"] }
 twox-hash = "2.1.2"
 unicode-segmentation = { version = "1.12.0" }
 yrs = "0.25.0"

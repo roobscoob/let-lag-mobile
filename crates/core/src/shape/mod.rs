@@ -1,5 +1,6 @@
 pub mod builtin;
 pub mod compiler;
+pub mod contour_texture;
 pub mod instruction;
 pub mod types;
 

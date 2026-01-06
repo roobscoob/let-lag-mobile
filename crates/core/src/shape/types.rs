@@ -20,20 +20,3 @@ impl Centimeters {
         Centimeters((m * 100.0) as i32)
     }
 }
-
-#[derive(Clone, Copy)]
-pub struct Position(pub IVec2);
-
-impl Position {
-    pub fn new(x: Centimeters, y: Centimeters) -> Self {
-        Position(IVec2::new(x.0, y.0))
-    }
-
-    pub fn x(&self) -> Centimeters {
-        Centimeters(self.0.x)
-    }
-
-    pub fn y(&self) -> Centimeters {
-        Centimeters(self.0.y)
-    }
-}

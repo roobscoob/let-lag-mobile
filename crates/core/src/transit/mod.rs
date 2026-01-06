@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use crate::shape::types::Position;
-
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct StationIdentifier(Arc<str>);
 
@@ -38,7 +36,7 @@ pub trait TransitStation {
 pub trait TransitComplex {
     fn name(&self) -> &str;
     fn all_stations(&self) -> &[Arc<dyn TransitStation>];
-    fn center(&self) -> Position;
+    fn center(&self) -> geo::Point;
 }
 
 pub trait TransitProvider {

@@ -1,9 +1,6 @@
 use std::sync::Arc;
 
-use crate::shape::{
-    compiler::Register,
-    types::{Centimeters, Position},
-};
+use crate::shape::{compiler::Register, contour_texture::ContourTexture, types::Centimeters};
 
 #[repr(u8)]
 pub enum BoundaryOverlapResolution {
@@ -13,21 +10,28 @@ pub enum BoundaryOverlapResolution {
 }
 
 pub enum SdfInstruction {
-    Point { // distance from center point
-        position: Position,
+    Point {
+        // distance from center point
+        position: geo::Point,
         output: Register,
     },
     PointCloud {
-        points: Vec<Position>,
+        points: Vec<geo::Point>,
         output: Register,
     },
-    Line {
-        start: Position,
-        end: Position,
+    GreatCircle {
+        point: geo::Point,
+        bearing: f64,
+        interior_point: geo::Point,
         output: Register,
     },
-    LineString {
-        points: Vec<Position>,
+    Geodesic {
+        start: geo::Point,
+        end: geo::Point,
+        output: Register,
+    },
+    GeodesicString {
+        points: Vec<geo::Point>,
         output: Register,
     },
     Union {
@@ -53,10 +57,24 @@ pub enum SdfInstruction {
         amount: Centimeters,
         output: Register,
     },
+    // abs(vdf)
+    Edge {
+        input: Register,
+        output: Register,
+    },
     Boundary {
         inside: Register,
         outside: Register,
         overlap_resolution: BoundaryOverlapResolution,
+        output: Register,
+    },
+    // Positive (outside) values are
+    // contour values greater than the zero_value.
+    // Negative (inside) values are
+    // contour values less than the zero_value.
+    Contour {
+        texture: Arc<ContourTexture>,
+        zero_value: Centimeters,
         output: Register,
     },
     LoadVdg {

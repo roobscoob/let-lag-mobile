@@ -1,12 +1,15 @@
-use crate::shape::{
-    Shape,
-    builtin::circle::Circle,
-    compiler::{Register, SdfCompiler},
-    types::{Centimeters, Position},
+use crate::{
+    hide_and_seek::question::context::QuestionContext,
+    shape::{
+        Shape,
+        builtin::circle::Circle,
+        compiler::{Register, SdfCompiler},
+        types::Centimeters,
+    },
 };
 
 pub struct RadarQuestion {
-    pub center: Position,
+    pub center: geo::Point,
     pub radius: Centimeters,
 }
 

@@ -2,46 +2,33 @@ use std::sync::Arc;
 
 use crate::{
     hide_and_seek::state::GameState,
-    shape::types::{Centimeters, Position},
+    shape::{contour_texture::ContourTexture, types::Centimeters},
     transit::TransitProvider,
 };
 
-pub struct CommercialAirport {
-    pub name: Arc<str>,
-    pub icao: Arc<str>,
-    pub iata: Option<Arc<str>>,
-    pub position: Position,
-}
-
-pub struct Mountain {
-    pub name: Arc<str>,
-    pub id: Option<Arc<str>>,
-    pub position: Position,
-}
-
-pub struct OsmPoi {
-    pub name: Arc<str>,
-    pub osm_id: i64,
-    pub position: Position,
-}
-
-pub struct OsmArea {
-    pub osm_relation_id: i64,
+pub struct Poi {
     pub name: Option<Arc<str>>,
-    pub boundary: boostvoronoi::prelude::Diagram,
+    pub id: Arc<str>,
+    pub position: geo::Point,
 }
 
-pub struct OsmStreetOrPath {
-    pub osm_way_id: i64,
+pub struct Area {
     pub name: Option<Arc<str>>,
-    pub positions: Vec<Position>,
+    pub id: Arc<str>,
+    pub boundary: Arc<boostvoronoi::prelude::Diagram>,
+}
+
+pub struct StreetOrPath {
+    pub id: i64,
+    pub name: Option<Arc<str>>,
+    pub positions: Vec<geo::Point>,
 }
 
 pub trait QuestionContext {
     fn game_state(&self) -> &GameState;
     fn transit_context(&self) -> &dyn TransitProvider;
-    fn all_airports(&self) -> &[CommercialAirport];
-    fn street_or_path(&self, osm_way_id: i64) -> Option<OsmStreetOrPath>;
+
+    fn street_or_path(&self, osm_way_id: i64) -> Option<StreetOrPath>;
 
     /// Find nearby streets and paths for which a capsule with radius {intersection_distance} tracing the given
     /// street/path would intersect with a capsule tracing {osm_way_id}.
@@ -49,22 +36,13 @@ pub trait QuestionContext {
         &self,
         osm_way_id: i64,
         intersection_distance: Centimeters,
-    ) -> Vec<OsmStreetOrPath>;
+    ) -> Vec<StreetOrPath>;
 
-    fn first_administrative_division(&self, osm_relation_id: i64) -> Option<OsmArea>;
-    fn second_administrative_division(&self, osm_relation_id: i64) -> Option<OsmArea>;
-    fn third_administrative_division(&self, osm_relation_id: i64) -> Option<OsmArea>;
-    fn fourth_administrative_division(&self, osm_relation_id: i64) -> Option<OsmArea>;
+    fn get_all_pois(&self, category: &str) -> Option<&[Poi]>;
+    fn get_poi(&self, category: &str, id: &str) -> Option<&Poi>;
+    fn get_all_areas(&self, category: &str) -> Option<&[Area]>;
+    fn get_all_areas_as_vdg(&self, category: &str) -> Option<Arc<boostvoronoi::prelude::Diagram>>;
+    fn get_area(&self, category: &str, id: &str) -> Option<&Area>;
 
-    fn all_mountains(&self) -> &[Mountain];
-    fn all_parks(&self) -> &[OsmPoi];
-    fn all_amusement_parks(&self) -> &[OsmPoi];
-    fn all_zoos(&self) -> &[OsmPoi];
-    fn all_aquariums(&self) -> &[OsmPoi];
-    fn all_golf_courses(&self) -> &[OsmPoi];
-    fn all_museums(&self) -> &[OsmPoi];
-    fn all_movie_theaters(&self) -> &[OsmPoi];
-    fn all_hospitals(&self) -> &[OsmPoi];
-    fn all_libraries(&self) -> &[OsmPoi];
-    fn all_foreign_consulates(&self) -> &[OsmPoi];
+    fn sea_level_contour_texture(&self) -> Option<Arc<ContourTexture>>;
 }

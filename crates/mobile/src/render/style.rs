@@ -6,14 +6,16 @@ pub enum Size {
     Maximum(Box<Size>, Box<Size>),
 }
 
+pub enum Rotation {
+    Fixed(f32),
+    FieldOffset(f32),
+}
+
 pub enum Pattern {
     SolidColor(palette::Srgba<f32>),
     Stripes {
-        color1: palette::Srgba<f32>,
-        color2: palette::Srgba<f32>,
-        stripe_width_1: Size,
-        stripe_width_2: Size,
-        rotation_degrees: f32,
+        stripes: Vec<(Size, palette::Srgba<f32>)>,
+        rotation: Rotation,
     },
 }
 
@@ -40,23 +42,11 @@ impl Style {
         }
     }
 
-    pub fn striped(
-        stripe_width_1: Size,
-        color1: palette::Srgba<f32>,
-        stripe_width_2: Size,
-        color2: palette::Srgba<f32>,
-        rotation_degrees: f32,
-    ) -> Self {
+    pub fn striped(rotation: Rotation, stripes: Vec<(Size, palette::Srgba<f32>)>) -> Self {
         Self {
             border_color: palette::Srgba::new(0.0, 0.0, 0.0, 0.0),
             border_width: Size::ScreenSpace { pixels: 0.0 },
-            fill: Some(Pattern::Stripes {
-                color1,
-                color2,
-                stripe_width_1,
-                stripe_width_2,
-                rotation_degrees,
-            }),
+            fill: Some(Pattern::Stripes { stripes, rotation }),
         }
     }
 

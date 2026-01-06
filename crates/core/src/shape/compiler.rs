@@ -1,3 +1,5 @@
+use crate::shape::types::Centimeters;
+
 #[derive(Clone, Copy)]
 pub struct Register(u32);
 
@@ -20,7 +22,7 @@ impl SdfCompiler {
         reg
     }
 
-    pub fn point(&mut self, position: super::types::Position) -> Register {
+    pub fn point(&mut self, position: geo::Point) -> Register {
         let output = self.allocate_register();
 
         self.instructions
@@ -32,7 +34,7 @@ impl SdfCompiler {
         output
     }
 
-    pub fn point_cloud(&mut self, points: Vec<super::types::Position>) -> Register {
+    pub fn point_cloud(&mut self, points: Vec<geo::Point>) -> Register {
         let output = self.allocate_register();
 
         self.instructions
@@ -41,20 +43,39 @@ impl SdfCompiler {
         output
     }
 
-    pub fn line(&mut self, start: super::types::Position, end: super::types::Position) -> Register {
+    pub fn great_circle(
+        &mut self,
+        point: geo::Point,
+        bearing: f64,
+        interior_point: geo::Point,
+    ) -> Register {
         let output = self.allocate_register();
 
         self.instructions
-            .push(super::instruction::SdfInstruction::Line { start, end, output });
+            .push(super::instruction::SdfInstruction::GreatCircle {
+                point,
+                bearing,
+                interior_point,
+                output,
+            });
 
         output
     }
 
-    pub fn line_string(&mut self, points: Vec<super::types::Position>) -> Register {
+    pub fn geodesic(&mut self, start: geo::Point, end: geo::Point) -> Register {
         let output = self.allocate_register();
 
         self.instructions
-            .push(super::instruction::SdfInstruction::LineString { points, output });
+            .push(super::instruction::SdfInstruction::Geodesic { start, end, output });
+
+        output
+    }
+
+    pub fn geodesic_string(&mut self, points: Vec<geo::Point>) -> Register {
+        let output = self.allocate_register();
+
+        self.instructions
+            .push(super::instruction::SdfInstruction::GeodesicString { points, output });
 
         output
     }
@@ -119,6 +140,15 @@ impl SdfCompiler {
         output
     }
 
+    pub fn edge(&mut self, input: Register) -> Register {
+        let output = self.allocate_register();
+
+        self.instructions
+            .push(super::instruction::SdfInstruction::Edge { input, output });
+
+        output
+    }
+
     pub fn boundary(
         &mut self,
         inside: Register,
@@ -146,6 +176,23 @@ impl SdfCompiler {
 
         self.instructions
             .push(super::instruction::SdfInstruction::LoadVdg { diagram, output });
+
+        output
+    }
+
+    pub fn with_contour_texture(
+        &mut self,
+        texture: std::sync::Arc<super::contour_texture::ContourTexture>,
+        zero_value: Centimeters,
+    ) -> Register {
+        let output = self.allocate_register();
+
+        self.instructions
+            .push(super::instruction::SdfInstruction::Contour {
+                texture,
+                zero_value,
+                output,
+            });
 
         output
     }

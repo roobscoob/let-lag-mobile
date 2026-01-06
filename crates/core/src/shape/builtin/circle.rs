@@ -1,16 +1,16 @@
 use crate::shape::{
     Shape,
     compiler::{Register, SdfCompiler},
-    types::{Centimeters, Position},
+    types::Centimeters,
 };
 
 pub struct Circle {
-    pub center: Position,
+    pub center: geo::Point,
     pub radius: Centimeters,
 }
 
 impl Circle {
-    pub fn new(center: Position, radius: Centimeters) -> Self {
+    pub fn new(center: geo::Point, radius: Centimeters) -> Self {
         Circle { center, radius }
     }
 }

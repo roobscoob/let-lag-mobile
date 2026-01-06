@@ -1,13 +1,19 @@
-use crate::hide_and_seek::question::matching::MatchingQuestion;
+use crate::hide_and_seek::question::{
+    matching::MatchingQuestion, measuring::MeasuringQuestion, radar::RadarQuestion,
+    thermometer::ThermometerQuestion,
+};
 
 pub mod context;
 pub mod matching;
+pub mod measuring;
+pub mod radar;
+pub mod thermometer;
 
 pub enum AnyQuestion {
     Matching(MatchingQuestion),
-    // Measuring(MeasuringQuestion),
-    // Thermometer(ThermometerQuestion),
-    // Radar(RadarQuestion),
+    Measuring(MeasuringQuestion),
+    Thermometer(ThermometerQuestion),
+    Radar(RadarQuestion),
     // Tentacle(TentacleQuestion),
     // Photo(PhotoQuestion),
 }
