@@ -58,30 +58,24 @@ impl Shape for TentacleQuestionShape {
         let (other, tentacle) = match self.question.target {
             // this will require special handling :yipee:
             TentacleTarget::MetroLine => {
-                let complexes = self
-                    .context
-                    .transit_context()
+                let transit = self.context.transit_context();
+                let complexes = transit
                     .get_trip(&TripIdentifier::new(closest_id))
                     .unwrap()
                     .stop_events()
                     .iter()
-                    .map(|e| {
-                        self.context
-                            .transit_context()
-                            .get_station(&e.station_id)
-                            .unwrap()
-                            .complex()
+                    .filter_map(|e| {
+                        let station = transit.get_station(&e.station_id)?;
+                        transit.get_complex(station.complex_id())
                     })
-                    .unique_by(|v| v.identifier())
+                    .unique_by(|v| v.id().clone())
                     .collect::<Vec<_>>();
 
-                let other = self
-                    .context
-                    .transit_context()
-                    .all_complexes()
+                let all_complexes = transit.all_complexes();
+                let other = all_complexes
                     .iter()
                     .filter_map(|c| {
-                        (!complexes.iter().any(|cc| cc.identifier() == c.identifier()))
+                        (!complexes.iter().any(|cc| cc.id() == c.id()))
                             .then_some(c.center())
                     });
 

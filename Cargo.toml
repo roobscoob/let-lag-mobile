@@ -2,6 +2,7 @@
 members = [
     "crates/server",
     "crates/core",
+    "crates/transit",
     "crates/mobile",
     "crates/api-types",
     "crates/uniffi-bindgen",

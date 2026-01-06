@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use crate::{resource::bundle::ResourceBundle, transit::TransitProvider};
+use crate::resource::bundle::ResourceBundle;
+use jet_lag_transit::TransitProvider;
 
 pub struct Map {
     id: Arc<str>,

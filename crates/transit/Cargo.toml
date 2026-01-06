@@ -1,0 +1,31 @@
+[package]
+name = "jet-lag-transit"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Core data structures
+geo = "0.28"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+
+# Spatial indexing
+rstar = "0.12"
+
+# Serialization (optional - for future use)
+flatbuffers = { version = "24", optional = true }
+prost = { version = "0.13", optional = true }  # For GTFS-RT protobuf
+
+# Utilities
+thiserror = "1.0"
+serde = { version = "1.0", features = ["derive"], optional = true }
+
+# GTFS parsing (only for compiler)
+gtfs-structures = { version = "0.41", optional = true }
+
+[features]
+default = []
+compiler = ["gtfs-structures", "serde"]
+serde = ["dep:serde"]
+
+[dev-dependencies]
+approx = "0.5"

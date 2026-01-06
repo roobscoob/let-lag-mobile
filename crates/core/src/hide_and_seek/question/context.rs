@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
+use jet_lag_transit::TransitProvider;
+
 use crate::{
     hide_and_seek::state::GameState,
     shape::{contour_texture::ContourTexture, types::Centimeters},
-    transit::TransitProvider,
 };
 
 pub struct Poi {

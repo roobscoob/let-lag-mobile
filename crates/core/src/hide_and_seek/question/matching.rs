@@ -170,15 +170,13 @@ impl Shape for MatchingQuestionShape {
             }
 
             MatchingTarget::TransitLine { scheduled_stations } => {
-                let (question_stations, other_stations): (Vec<_>, Vec<_>) = self
-                    .context
-                    .transit_context()
-                    .all_complexes()
+                let all_complexes = self.context.transit_context().all_complexes();
+                let (question_stations, other_stations): (Vec<_>, Vec<_>) = all_complexes
                     .iter()
                     .partition(|c| {
-                        c.all_stations()
+                        c.station_ids()
                             .iter()
-                            .any(|s| scheduled_stations.contains(&s.identifier()))
+                            .any(|station_id| scheduled_stations.contains(station_id))
                     });
 
                 let osp = compiler.point_cloud(other_stations.iter().map(|s| s.center()).collect());
@@ -192,25 +190,30 @@ impl Shape for MatchingQuestionShape {
             }
 
             MatchingTarget::StationsNameLength(target_length) => {
-                let (question_stations, other_stations): (Vec<_>, Vec<_>) = self
-                    .context
-                    .transit_context()
-                    .all_complexes()
+                let transit = self.context.transit_context();
+                let all_stations = transit.all_stations();
+
+                let (question_stations, other_stations): (Vec<_>, Vec<_>) = all_stations
                     .iter()
-                    .flat_map(|c| c.all_stations().to_vec())
                     .partition(|s| s.name().graphemes(true).count() as u32 == *target_length);
 
                 let osp = compiler.point_cloud(
                     other_stations
                         .iter()
-                        .map(|s| s.complex().center())
+                        .filter_map(|s| {
+                            let complex = transit.get_complex(s.complex_id())?;
+                            Some(complex.center())
+                        })
                         .collect(),
                 );
 
                 let qsp = compiler.point_cloud(
                     question_stations
                         .iter()
-                        .map(|s| s.complex().center())
+                        .filter_map(|s| {
+                            let complex = transit.get_complex(s.complex_id())?;
+                            Some(complex.center())
+                        })
                         .collect(),
                 );
 

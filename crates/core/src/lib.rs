@@ -4,7 +4,9 @@ pub mod hide_and_seek;
 pub mod map;
 pub mod resource;
 pub mod shape;
-pub mod transit;
+
+// Re-export transit from the transit crate
+pub use jet_lag_transit as transit;
 
 pub enum Game {
     HideAndSeek(HideAndSeekGame),
