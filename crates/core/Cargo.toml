@@ -14,6 +14,7 @@ geojson = "0.24.2"
 glam = "0.30.9"
 itertools = "0.14.0"
 jet-lag-transit = { path = "../transit" }
+quadtree_rs = "0.1.3"
 reqwest = { version = "0.13", features = ["json", "stream"] }
 rusqlite = { version = "0.38.0", features = ["modern-full"] }
 serde = { version = "1", features = ["derive"] }
