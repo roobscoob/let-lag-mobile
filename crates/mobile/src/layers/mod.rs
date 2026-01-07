@@ -1,11 +1,25 @@
 mod oob {
+    use std::sync::{LazyLock, Mutex};
+
+    use crate::render::RenderSession;
+
+    static RENDER_SESSION: LazyLock<Mutex<RenderSession>> =
+        LazyLock::new(|| Mutex::new(RenderSession::new()));
+
     #[cfg(target_os = "android")]
-    pub mod android;
+    mod android;
+    mod traverse_quadtree;
+    mod culling;
+
+    #[cfg(target_os = "android")]
+    pub use android::OutOfBoundsLayer;
 }
 pub mod test_square {
-    // #[cfg(target_os = "android")]
-    pub mod android;
-    pub mod traverse_quadtree;
+    #[cfg(target_os = "android")]
+    mod android;
+    mod traverse_quadtree;
+    #[cfg(target_os = "android")]
+    pub use android::TestSquare;
 }
 
 mod android {
@@ -16,7 +30,7 @@ mod android {
     use tracing_logcat::{LogcatMakeWriter, LogcatTag};
     use tracing_subscriber::fmt::format::Format;
 
-    use crate::layers::{oob::android::OutOfBoundsLayer, test_square::android::TestSquare};
+    use crate::layers::{oob::OutOfBoundsLayer, test_square::TestSquare};
 
     fn setup_logging() {
         static LOGGING_SETUP: Once = Once::new();

@@ -8,7 +8,6 @@ use eyre::{ContextCompat, bail};
 use glam::{DMat4, DQuat, DVec3, FloatExt, Vec2, dvec3, dvec4, vec3, vec4};
 use glow::{HasContext, NativeBuffer, NativeProgram, NativeUniformLocation};
 use khronos_egl::{DynamicInstance, EGL1_0};
-use mercantile::{LngLat, XY, convert_xy};
 use tracing::{debug, error, info};
 use zerocopy::IntoBytes;
 
