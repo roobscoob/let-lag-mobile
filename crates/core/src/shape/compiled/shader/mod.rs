@@ -14,7 +14,7 @@ use naga::{
     valid::{Capabilities, ValidationFlags},
 };
 use strum::IntoDiscriminant;
-use zerocopy::{FromBytes, IntoBytes};
+use zerocopy::{FromBytes, IntoBytes, KnownLayout, Immutable};
 
 use crate::shape::{
     compiled::shader::routine::{RoutineResult, point::compile_point},
@@ -32,14 +32,14 @@ pub struct ShaderSlot {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, FromBytes, IntoBytes)]
+#[derive(Debug, Clone, Copy, FromBytes, IntoBytes, KnownLayout, Immutable)]
 pub struct ShaderArgument {
     pub offset: u32,
     pub length: u32,
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, FromBytes, IntoBytes)]
+#[derive(Debug, Clone, Copy, FromBytes, IntoBytes, KnownLayout, Immutable)]
 pub struct TileBounds {
     pub min_lat_deg: f32,
     pub min_lon_deg: f32,
@@ -162,6 +162,8 @@ impl ShapeShader {
         );
 
         let hash = hasher.finish();
+
+        naga::compact::compact(&mut module, naga::compact::KeepUnused::No);
 
         Ok(ShapeShader {
             hash,

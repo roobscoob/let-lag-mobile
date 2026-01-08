@@ -1,5 +1,3 @@
-enable f64;
-
 struct ShaderArgument {
     offset: u32,
     length: u32,

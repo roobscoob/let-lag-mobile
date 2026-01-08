@@ -8,8 +8,8 @@ mod oob {
 
     #[cfg(target_os = "android")]
     mod android;
-    mod traverse_quadtree;
     mod culling;
+    mod traverse_quadtree;
 
     #[cfg(target_os = "android")]
     pub use android::OutOfBoundsLayer;
@@ -28,7 +28,9 @@ mod android {
     use glam::DMat4;
     use tracing::Level;
     use tracing_logcat::{LogcatMakeWriter, LogcatTag};
-    use tracing_subscriber::fmt::format::Format;
+    use tracing_subscriber::{
+        filter::FilterFn, fmt::format::Format, layer::SubscriberExt, util::SubscriberInitExt,
+    };
 
     use crate::layers::{oob::OutOfBoundsLayer, test_square::TestSquare};
 
@@ -38,13 +40,15 @@ mod android {
         LOGGING_SETUP.call_once(|| {
             let tag = LogcatTag::Fixed("JetLag-Rust".to_owned());
             let writer = LogcatMakeWriter::new(tag).expect("Failed to initialize logcat writer");
-            tracing_subscriber::fmt()
+            let filter = FilterFn::new(|en| en.module_path().unwrap_or_default().starts_with("jet_lag"));
+            let layer = tracing_subscriber::fmt::layer()
                 .event_format(Format::default().with_level(false).without_time())
                 .with_writer(writer)
-                .with_ansi(false)
-                .with_max_level(Level::TRACE)
+                .with_ansi(false);
+            tracing_subscriber::registry()
+                .with(layer)
+                .with(filter)
                 .init();
-
             std::panic::set_hook(Box::new(panic_hook));
         })
     }

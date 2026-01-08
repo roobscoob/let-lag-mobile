@@ -1,8 +1,8 @@
+use core::{mem::size_of, num::NonZero, option::Option::None};
 use std::{
     collections::BTreeMap,
     default::Default,
     future::pending,
-    option::Option::None,
     pin::Pin,
     sync::{
         Arc,
@@ -16,41 +16,44 @@ use actix::{
     Actor, ActorFuture, Addr, AsyncContext, Context, Handler, Message, WrapFuture,
     fut::LocalBoxActorFuture,
 };
+use ash::vk::{self, ExternalMemoryHandleTypeFlags, StructureType};
 use jet_lag_core::{
     map::tile::Tile,
     shape::{
         Shape,
-        compiled::{CompiledShape, shader::cache::ShaderCache},
+        compiled::{
+            CompiledShape,
+            shader::{TileBounds, cache::ShaderCache},
+        },
         instruction::SdfInstruction,
     },
+};
+use ndk::{
+    hardware_buffer::{HardwareBuffer, HardwareBufferDesc, HardwareBufferRef, HardwareBufferUsage},
+    hardware_buffer_format::HardwareBufferFormat,
 };
 use replace_with::replace_with_or_abort;
 use tokio::sync::oneshot;
 use wgpu::{
-    Backends, ColorTargetState, ColorWrites, CommandEncoder, CommandEncoderDescriptor, Extent3d,
-    FragmentState, Instance, LoadOpDontCare, MultisampleState, Operations,
-    PipelineCompilationOptions, PollType, PrimitiveState, PrimitiveTopology,
-    RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor,
-    ShaderModule, ShaderModuleDescriptor, Texture, TextureDescriptor, TextureFormat, TextureUsages,
-    TextureViewDescriptor, VertexAttribute, VertexBufferLayout, VertexState, VertexStepMode, naga,
+    Backends, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry,
+    BufferBinding, BufferUsages, ColorTargetState, ColorWrites, CommandEncoder,
+    CommandEncoderDescriptor, Extent3d, FragmentState, Instance, LoadOpDontCare, MultisampleState,
+    Operations, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PollType,
+    PrimitiveState, PrimitiveTopology, RenderPassColorAttachment, RenderPassDescriptor,
+    RenderPipeline, RenderPipelineDescriptor, ShaderModule, ShaderModuleDescriptor, ShaderStages,
+    Texture, TextureDescriptor, TextureFormat, TextureUsages, TextureUses, TextureViewDescriptor,
+    VertexAttribute, VertexBufferLayout, VertexState, VertexStepMode, naga,
+    util::{BufferInitDescriptor, DeviceExt},
+    wgt::ExternalTextureDescriptor,
 };
-use wgpu_hal::{Attachment, AttachmentOps, ColorAttachment};
+use wgpu_hal::{Attachment, AttachmentOps, ColorAttachment, MemoryFlags, vulkan::TextureMemory};
 use zerocopy::IntoBytes;
 
 pub fn start_render_thread() -> Addr<RenderThread> {
     let (sender, receiver) = oneshot::channel();
 
     #[cfg(target_os = "android")]
-    let context = {
-        let instance = crate::android::gl::get_egl_instance();
-        Some(
-            instance
-                .get_current_context()
-                .expect("no egl context was available")
-                .as_ptr()
-                .expose_provenance(),
-        )
-    };
+    let context = { None };
     #[cfg(target_os = "ios")]
     let context = None;
 
@@ -69,7 +72,31 @@ pub fn start_render_thread() -> Addr<RenderThread> {
         .expect("failed to receive address from thread")
 }
 
+#[cfg(target_os = "android")]
+unsafe fn find_memory_type_index(
+    memory_requirements: &vk::MemoryRequirements,
+    memory_properties: &vk::PhysicalDeviceMemoryProperties,
+    required_properties: vk::MemoryPropertyFlags,
+) -> Option<u32> {
+    for i in 0..memory_properties.memory_type_count {
+        let memory_type = &memory_properties.memory_types[i as usize];
+
+        // Check if this memory type is allowed by the memory requirements
+        let type_supported = (memory_requirements.memory_type_bits & (1 << i)) != 0;
+
+        // Check if this memory type has the required properties
+        let properties_match = memory_type.property_flags.contains(required_properties);
+
+        if type_supported && properties_match {
+            return Some(i);
+        }
+    }
+    None
+}
+
 pub struct RenderThread {
+    instance: wgpu::Instance,
+    adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
     vertex_shader: ShaderModule,
@@ -81,69 +108,36 @@ pub struct RenderThread {
 impl RenderThread {
     async fn new(context: Option<usize>) -> Self {
         #[cfg(target_os = "android")]
-        let (device, queue) = {
-            use crate::android::gl::get_egl_instance;
-            use khronos_egl as egl;
+        let (instance, (device, queue), adapter) = {
+            use wgpu::{DeviceDescriptor, FeaturesWGPU, FeaturesWebGPU, Limits, RequestAdapterOptions};
 
-            let egl = get_egl_instance();
+            let instance = Instance::new(&wgpu::InstanceDescriptor {
+                backends: Backends::VULKAN,
+                ..Default::default()
+            });
 
-            unsafe {
-                use std::ffi;
-
-                use tracing::debug;
-                use wgpu::{Features, GlBackendOptions, Limits, wgt::DeviceDescriptor};
-
-                let display = egl
-                    .get_display(egl::DEFAULT_DISPLAY)
-                    .expect("failed to get default display");
-
-                debug!("got context {:?}", context);
-
-                let config = egl
-                    .choose_first_config(display, &[egl::NONE])
-                    .expect("failed to fetch config")
-                    .expect("unable to choose a matching config");
-                let context = egl
-                    .create_context(
-                        display,
-                        config,
-                        Some(egl::Context::from_ptr(
-                            context.expect("no egl context was sent") as _,
-                        )),
-                        &[egl::CONTEXT_MAJOR_VERSION, 3, egl::NONE],
-                    )
-                    .expect("failed to create context");
-
-                egl.make_current(display, None, None, Some(context))
-                    .expect("failed to set current context");
-
-                let adapter = wgpu_hal::gles::Adapter::new_external(
-                    |proc| {
-                        egl.get_proc_address(proc)
-                            .map(|func| func as *mut ffi::c_void)
-                            .unwrap_or_default() as _
-                    },
-                    GlBackendOptions::default(),
-                )
-                .expect("failed to create adapter");
-
-                let instance = Instance::new(&wgpu::InstanceDescriptor {
-                    backends: Backends::GL,
+            let adapter = instance
+                .request_adapter(&RequestAdapterOptions {
                     ..Default::default()
-                });
-                let adapter = instance.create_adapter_from_hal(adapter);
+                })
+                .await
+                .unwrap();
+
+            (
+                instance,
                 adapter
                     .request_device(&DeviceDescriptor {
+                        required_features: wgpu::Features { features_wgpu: FeaturesWGPU::empty(), features_webgpu: FeaturesWebGPU::empty() },
                         required_limits: Limits {
                             max_storage_buffers_per_shader_stage: 4,
                             ..Default::default()
                         },
-                        required_features: Features::SHADER_F64,
                         ..Default::default()
                     })
                     .await
-                    .expect("failed to obtain device")
-            }
+                    .expect("failed to obtain device"),
+                adapter,
+            )
         };
 
         let vertex_shader = device.create_shader_module(ShaderModuleDescriptor {
@@ -152,6 +146,8 @@ impl RenderThread {
         });
 
         Self {
+            instance,
+            adapter,
             device,
             queue,
             vertex_shader,
@@ -174,10 +170,11 @@ impl Actor for RenderThread {
 
 struct ShapeObj {
     compiled_shape: CompiledShape,
-    no_ellipsoid_low_prec: RenderPipeline,
-    no_ellipsoid_high_prec: RenderPipeline,
+    bind_group_layout: BindGroupLayout,
+    // no_ellipsoid_low_prec: RenderPipeline,
+    // no_ellipsoid_high_prec: RenderPipeline,
     use_ellipsoid_low_prec: RenderPipeline,
-    use_ellipsoid_high_prec: RenderPipeline,
+    // use_ellipsoid_high_prec: RenderPipeline,
 }
 
 #[derive(Message)]
@@ -191,12 +188,57 @@ impl Handler<StartShapeCompilation> for RenderThread {
 
     fn handle(&mut self, msg: StartShapeCompilation, _ctx: &mut Self::Context) -> Self::Result {
         let shape = CompiledShape::compile(&self.device, &mut self.shader_cache, &*msg.shape);
+        let bind_group_layout = self
+            .device
+            .create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: None,
+                entries: &[
+                    BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
+        let pipeline_layout = self
+            .device
+            .create_pipeline_layout(&PipelineLayoutDescriptor {
+                label: None,
+                immediate_size: 0,
+                bind_group_layouts: &[&bind_group_layout],
+            });
 
         let create_render_pipeline = |ellipsoid: bool, high_prec: bool| {
             self.device
                 .create_render_pipeline(&RenderPipelineDescriptor {
                     label: None,
-                    layout: None,
+                    layout: Some(&pipeline_layout),
                     vertex: VertexState {
                         buffers: &[],
                         compilation_options: PipelineCompilationOptions::default(),
@@ -237,10 +279,11 @@ impl Handler<StartShapeCompilation> for RenderThread {
 
         let id = shape.id();
         self.shapes.push(ShapeObj {
-            no_ellipsoid_low_prec: create_render_pipeline(false, false),
-            no_ellipsoid_high_prec: create_render_pipeline(false, true),
+            // no_ellipsoid_low_prec: create_render_pipeline(false, false),
+            // no_ellipsoid_high_prec: create_render_pipeline(false, true),
             use_ellipsoid_low_prec: create_render_pipeline(true, false),
-            use_ellipsoid_high_prec: create_render_pipeline(true, true),
+            // use_ellipsoid_high_prec: create_render_pipeline(true, true),
+            bind_group_layout,
             compiled_shape: shape,
         });
 
@@ -248,35 +291,188 @@ impl Handler<StartShapeCompilation> for RenderThread {
     }
 }
 
+pub struct WrapBufferRef(pub HardwareBufferRef);
+unsafe impl Send for WrapBufferRef {}
+
+type RequestReturnType = WrapBufferRef;
 #[derive(Message)]
-#[rtype(result = "wgpu::Texture")]
+#[rtype(result = "RequestReturnType")]
 pub struct RequestTile {
     pub tile: Tile,
 }
 
 impl Handler<RequestTile> for RenderThread {
-    type Result = LocalBoxActorFuture<Self, wgpu::Texture>;
+    type Result = LocalBoxActorFuture<Self, RequestReturnType>;
 
     fn handle(&mut self, msg: RequestTile, _ctx: &mut Self::Context) -> Self::Result {
-        let texture = self.device.create_texture(&TextureDescriptor {
-            label: None,
-            size: Extent3d {
+        let hardware_buffer: HardwareBufferRef =
+            ndk::hardware_buffer::HardwareBuffer::allocate(HardwareBufferDesc {
                 width: 256,
                 height: 256,
-                depth_or_array_layers: 1,
+                layers: 1,
+                stride: 2,
+                usage: HardwareBufferUsage::GPU_FRAMEBUFFER
+                    | HardwareBufferUsage::GPU_SAMPLED_IMAGE,
+                format: HardwareBufferFormat::__Unknown(
+                    ndk_sys::AHardwareBuffer_Format::AHARDWAREBUFFER_FORMAT_R16_UINT.0 as i32,
+                ),
+            })
+            .unwrap();
+
+        let ext_info = vk::ExternalMemoryImageCreateInfo {
+            handle_types: ExternalMemoryHandleTypeFlags::ANDROID_HARDWARE_BUFFER_ANDROID,
+            ..Default::default()
+        };
+
+        let image_create_info = vk::ImageCreateInfo {
+            p_next: &ext_info as *const _ as *const _,
+            extent: vk::Extent3D {
+                width: 256,
+                height: 256,
+                depth: 1,
             },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: TextureFormat::R32Uint,
-            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
-            view_formats: &[TextureFormat::R32Uint],
-        });
+            mip_levels: 1,
+            array_layers: 1,
+            image_type: vk::ImageType::TYPE_2D,
+            format: vk::Format::R16_UINT,
+            tiling: vk::ImageTiling::OPTIMAL,
+            initial_layout: vk::ImageLayout::UNDEFINED,
+            usage: vk::ImageUsageFlags::COLOR_ATTACHMENT
+                | vk::ImageUsageFlags::TRANSFER_SRC
+                | vk::ImageUsageFlags::TRANSFER_DST,
+            samples: vk::SampleCountFlags::TYPE_1,
+            sharing_mode: vk::SharingMode::EXCLUSIVE,
+            flags: vk::ImageCreateFlags::MUTABLE_FORMAT,
+            ..Default::default()
+        };
+
+        let hal_device = unsafe { self.device.as_hal::<wgpu_hal::api::Vulkan>().unwrap() };
+        let device = hal_device.raw_device();
+
+        let texture = unsafe {
+            let image = device
+                .create_image(&image_create_info, None)
+                .expect("failed to create image");
+            let import_memory_info = vk::ImportAndroidHardwareBufferInfoANDROID {
+                buffer: hardware_buffer.as_ptr() as _,
+                ..Default::default()
+            };
+            let memory_requirements = device.get_image_memory_requirements(image);
+
+            let memory_allocate_info = {
+                let adapter = self.adapter.as_hal::<wgpu_hal::api::Vulkan>().unwrap();
+                let phy = adapter.raw_physical_device();
+                let memory_properties = adapter
+                    .shared_instance()
+                    .raw_instance()
+                    .get_physical_device_memory_properties(phy);
+                let memory_type_index = find_memory_type_index(
+                    &memory_requirements,
+                    &memory_properties,
+                    vk::MemoryPropertyFlags::DEVICE_LOCAL,
+                )
+                .unwrap();
+                vk::MemoryAllocateInfo {
+                    p_next: &import_memory_info as *const _ as *const _,
+                    allocation_size: memory_requirements.size,
+                    memory_type_index,
+                    ..Default::default()
+                }
+            };
+
+            let device_memory = device.allocate_memory(&memory_allocate_info, None).unwrap();
+
+            device.bind_image_memory(image, device_memory, 0).unwrap();
+
+            let desc = wgpu_hal::TextureDescriptor {
+                label: None,
+                usage: TextureUses::COLOR_TARGET | TextureUses::COPY_SRC | TextureUses::COPY_DST,
+                size: Extent3d {
+                    width: 256,
+                    height: 256,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                memory_flags: MemoryFlags::empty(),
+                format: TextureFormat::R16Uint,
+                view_formats: vec![TextureFormat::R16Uint],
+            };
+            let texture = hal_device.texture_from_raw(
+                image,
+                &desc,
+                None,
+                TextureMemory::Dedicated(device_memory),
+            );
+
+            self.device
+                .create_texture_from_hal::<wgpu_hal::api::Vulkan>(
+                    texture,
+                    &TextureDescriptor {
+                        label: None,
+                        size: desc.size,
+                        mip_level_count: desc.mip_level_count,
+                        sample_count: desc.sample_count,
+                        dimension: desc.dimension,
+                        format: desc.format,
+                        usage: TextureUsages::RENDER_ATTACHMENT
+                            | TextureUsages::COPY_SRC
+                            | TextureUsages::COPY_DST,
+                        view_formats: &desc.view_formats,
+                    },
+                )
+        };
+
         let mut encoder = self
             .device
             .create_command_encoder(&CommandEncoderDescriptor::default());
 
         for shape in &self.shapes {
+            let mut contents: Vec<u8> = vec![];
+            let arguments = shape
+                .compiled_shape
+                .fill_arguments(&mut contents, &msg.tile);
+            let arguments_offset: u64 = contents.len() as u64;
+            contents.extend(arguments.as_bytes());
+            let uniform_offset: u64 = contents.len() as u64;
+            contents.extend(msg.tile.into_bounds().as_bytes());
+
+            let buffer = self.device.create_buffer_init(&BufferInitDescriptor {
+                label: None,
+                contents: &contents,
+                usage: BufferUsages::STORAGE,
+            });
+            let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &shape.bind_group_layout,
+                entries: &[
+                    BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::Buffer(BufferBinding {
+                            buffer: &buffer,
+                            offset: 0,
+                            size: NonZero::new(arguments_offset),
+                        }),
+                    },
+                    BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Buffer(BufferBinding {
+                            buffer: &buffer,
+                            offset: arguments_offset as u64,
+                            size: NonZero::new(arguments.as_bytes().len() as u64),
+                        }),
+                    },
+                    BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Buffer(BufferBinding {
+                            buffer: &buffer,
+                            offset: uniform_offset as u64,
+                            size: NonZero::new(size_of::<TileBounds>() as u64),
+                        }),
+                    },
+                ],
+            });
             let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
                 color_attachments: &[Some(RenderPassColorAttachment {
                     ops: Operations {
@@ -297,6 +493,7 @@ impl Handler<RequestTile> for RenderThread {
             });
 
             pass.set_pipeline(&shape.use_ellipsoid_low_prec);
+            pass.set_bind_group(0, Some(&bind_group), &[]);
             pass.draw(0..4, 0..1);
         }
 
@@ -306,11 +503,11 @@ impl Handler<RequestTile> for RenderThread {
         }
         #[pin_project::pin_project]
         struct Impl {
-            texture: Option<Texture>,
+            return_value: Option<RequestReturnType>,
             state: State,
         }
         impl ActorFuture<RenderThread> for Impl {
-            type Output = Texture;
+            type Output = RequestReturnType;
 
             fn poll(
                 self: Pin<&mut Self>,
@@ -342,10 +539,10 @@ impl Handler<RequestTile> for RenderThread {
                         Poll::Pending
                     }
                     State::Waiting(done) => {
-                        if let Some(texture) =
-                            this.texture.take_if(|_| done.load(Ordering::Acquire))
+                        if let Some(return_value) =
+                            this.return_value.take_if(|_| done.load(Ordering::Acquire))
                         {
-                            Poll::Ready(texture)
+                            Poll::Ready(return_value)
                         } else {
                             Poll::Pending
                         }
@@ -356,7 +553,7 @@ impl Handler<RequestTile> for RenderThread {
 
         Box::pin(Impl {
             state: State::ToSubmit(encoder),
-            texture: Some(texture),
+            return_value: Some(WrapBufferRef(hardware_buffer)),
         })
     }
 }

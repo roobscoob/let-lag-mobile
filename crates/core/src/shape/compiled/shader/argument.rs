@@ -1,13 +1,13 @@
 use crate::{map::tile::Tile, shape::compiled::shader::ShaderArgument};
 
 pub trait IntoShaderArgument {
-    fn into_shader_argument(&self, buffer: &mut Vec<u8>, tile: Tile) -> Vec<ShaderArgument>;
+    fn into_shader_argument(&self, buffer: &mut Vec<u8>, tile: &Tile) -> Vec<ShaderArgument>;
 }
 
 const COORD_SCALE: i32 = 10_000_000;
 
 impl IntoShaderArgument for geo::Point {
-    fn into_shader_argument(&self, buffer: &mut Vec<u8>, _tile: Tile) -> Vec<ShaderArgument> {
+    fn into_shader_argument(&self, buffer: &mut Vec<u8>, _tile: &Tile) -> Vec<ShaderArgument> {
         // convert into (i32, i32) where each value is the f32 * COORD_SCALE
         let x = (self.x() * COORD_SCALE as f64).round() as i32;
         let y = (self.y() * COORD_SCALE as f64).round() as i32;

@@ -1,8 +1,11 @@
-use core::{future::Future, pin::Pin, task::Waker};
-use std::{collections::HashMap, sync::{Once, OnceLock}};
+use core::{ffi, future::Future, pin::Pin, ptr::null_mut, task::Waker};
+use std::{
+    collections::HashMap,
+    sync::{Once, OnceLock},
+};
 
 use crate::{
-    android::gl::{GlResult, get_gl_context},
+    android::gl::{GlResult, get_egl_instance, get_gl_context},
     layers::{
         android::CustomLayer,
         oob::{
@@ -22,6 +25,7 @@ use jet_lag_core::{
     map::tile::Tile,
     shape::{Shape, builtin::circle::Circle, compiler::Register},
 };
+use ndk::hardware_buffer::HardwareBufferRef;
 use pollster::FutureExt;
 use wgpu_hal::gles::TextureInner;
 use zerocopy::IntoBytes;
@@ -31,7 +35,8 @@ const MAX_ZOOM: u8 = 20;
 
 enum TileEntry {
     Loaded {
-        texture: wgpu::Texture,
+        hardware_buffer: HardwareBufferRef,
+        texture: glow::Texture,
     },
     InProgress {
         request: Pin<Box<Request<RenderThread, RequestTile>>>,
@@ -309,24 +314,69 @@ impl CustomLayer for OutOfBoundsLayer {
                             .poll(&mut core::task::Context::from_waker(Waker::noop()))
                         {
                             core::task::Poll::Ready(texture) => {
-                                let texture = texture.unwrap();
+                                let hardware_buffer: HardwareBufferRef = texture.unwrap().0;
+
+                                let egl = get_egl_instance();
+                                let func: extern "C" fn(
+                                    *const ndk_sys::AHardwareBuffer,
+                                )
+                                    -> *mut ffi::c_void = core::mem::transmute(
+                                    egl.get_proc_address("eglGetNativeClientBufferANDROID"),
+                                );
+                                let client_buffer = func(hardware_buffer.as_ptr());
+                                if client_buffer.is_null() {
+                                    panic!("failed to get client buffer for harwdare buffer");
+                                }
+
+                                use khronos_egl as egl;
+                                let create_image_khr: extern "C" fn(
+                                    egl::Display,
+                                    Option<egl::Context>,
+                                    u32,
+                                    *mut ffi::c_void,
+                                    *const i32,
+                                )
+                                    -> egl::Image = std::mem::transmute(
+                                    egl.get_proc_address("eglCreateImageKHR").unwrap(),
+                                );
+
+                                const EGL_NATIVE_BUFFER_ANDROID: u32 = 0x3140;
+                                const EGL_IMAGE_PRESERVED_KHR: i32 = 0x30D2;
+
+                                let image = create_image_khr(
+                                    egl.get_current_display().unwrap(),
+                                    None,
+                                    EGL_NATIVE_BUFFER_ANDROID,
+                                    client_buffer,
+                                    [EGL_IMAGE_PRESERVED_KHR, 1, egl::NONE as i32].as_ptr(),
+                                );
+                                if image.as_ptr().is_null() {
+                                    panic!("Failed to create EGLImage");
+                                }
+
+                                let gl_egl_image_target_texture_2d: extern "C" fn(u32, egl::Image) =
+                                    std::mem::transmute(
+                                        egl.get_proc_address("glEGLImageTargetTexture2DOES"),
+                                    );
+
+                                let texture = gl.create_texture().unwrap();
+                                gl.bind_texture(TEXTURE_2D, Some(texture));
+
+                                gl_egl_image_target_texture_2d(TEXTURE_2D, image);
+                                let error = gl.get_error();
+                                if error != NO_ERROR {
+                                    panic!("got error while bidning texture to image: {error}")
+                                }
+
                                 let _ = self
                                     .active_tile_requests
-                                    .insert(request_params, TileEntry::Loaded { texture });
+                                    .insert(request_params, TileEntry::Loaded { hardware_buffer, texture });
                             }
                             core::task::Poll::Pending => {}
                         }
                     }
-                    Some(TileEntry::Loaded { texture }) => {
-                        let hal_texture = texture.as_hal::<wgpu_hal::api::Gles>().unwrap();
-                        let TextureInner::Texture { raw, target } = &hal_texture.inner else {
-                            unreachable!(
-                                "render thread created incorrect type of texture {:#?}",
-                                hal_texture.inner
-                            )
-                        };
-
-                        draw_tile_at(tile.zoom, tile.x0, tile.y0, *raw);
+                    Some(TileEntry::Loaded { hardware_buffer, texture }) => {
+                        draw_tile_at(tile.zoom, tile.x0, tile.y0, *texture);
                     }
                     None => {
                         let mut guard = RENDER_SESSION.lock().unwrap();

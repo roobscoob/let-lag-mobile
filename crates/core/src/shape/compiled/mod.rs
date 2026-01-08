@@ -67,7 +67,7 @@ impl CompiledShape {
         self.compilation_id
     }
 
-    pub fn fill_arguments(&self, buffer: &mut Vec<u8>, tile: Tile) -> Vec<ShaderArgument> {
+    pub fn fill_arguments(&self, buffer: &mut Vec<u8>, tile: &Tile) -> Vec<ShaderArgument> {
         let mut shader_arguments = Vec::new();
 
         for slot in self.shader.required_slots().iter() {
