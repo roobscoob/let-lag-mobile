@@ -17,28 +17,38 @@ pub enum BoundaryOverlapResolution {
     Midpoint = 3,
 }
 
+#[derive(strum::EnumDiscriminants)]
+#[strum_discriminants(derive(Hash))]
 pub enum SdfInstruction {
     Point {
         // distance from center point
+        // argument index 0
         position: geo::Point,
         output: Register,
     },
     PointCloud {
+        // argument index 0
         points: Vec<geo::Point>,
         output: Register,
     },
     GreatCircle {
+        // argument index 0
         point: geo::Point,
+        // argument index 1
         bearing: f64,
+        // argument index 2
         interior_point: geo::Point,
         output: Register,
     },
     Geodesic {
+        // argument index 0
         start: geo::Point,
+        // argument index 1
         end: geo::Point,
         output: Register,
     },
     GeodesicString {
+        // argument index 0
         points: geo::LineString,
         output: Register,
     },
@@ -62,6 +72,7 @@ pub enum SdfInstruction {
     },
     Dilate {
         input: Register,
+        // argument index 0
         amount: Centimeters,
         output: Register,
     },
@@ -73,6 +84,7 @@ pub enum SdfInstruction {
     Boundary {
         inside: Register,
         outside: Register,
+        // argument index 0
         overlap_resolution: BoundaryOverlapResolution,
         output: Register,
     },
@@ -82,6 +94,7 @@ pub enum SdfInstruction {
     // contour values less than the zero_value.
     Contour {
         texture: Arc<ContourTexture>,
+        // argument index 0
         zero_value: Centimeters,
         output: Register,
     },

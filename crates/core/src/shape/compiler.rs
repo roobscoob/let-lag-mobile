@@ -1,6 +1,6 @@
 use crate::shape::types::Centimeters;
 
-#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Register(u32);
 
 pub struct SdfCompiler {
@@ -14,6 +14,10 @@ impl SdfCompiler {
             instructions: Vec::new(),
             next_register: 0,
         }
+    }
+
+    pub fn finish(self) -> Vec<super::instruction::SdfInstruction> {
+        self.instructions
     }
 
     fn allocate_register(&mut self) -> Register {

@@ -12,8 +12,10 @@ futures-util = "0.3"
 geo = "0.32.0"
 geojson = "0.24.2"
 glam = "0.30.9"
+include-wgsl-oil = { version = "0.2.9", features = ["encase", "glam"] }
 itertools = "0.14.0"
 jet-lag-transit = { path = "../transit" }
+naga = "28.0.0"
 quadtree_rs = "0.1.3"
 reqwest = { version = "0.13", features = ["json", "stream"] }
 rusqlite = { version = "0.38.0", features = ["modern-full"] }
@@ -23,3 +25,4 @@ tokio = { version = "1.49.0", features = ["full"] }
 twox-hash = "2.1.2"
 unicode-segmentation = { version = "1.12.0" }
 yrs = "0.25.0"
+zerocopy = { version = "0.8.33", features = ["derive"] }
