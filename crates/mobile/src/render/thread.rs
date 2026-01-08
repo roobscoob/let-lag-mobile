@@ -91,7 +91,7 @@ impl RenderThread {
                 use std::ffi;
 
                 use tracing::debug;
-                use wgpu::{GlBackendOptions, Limits, wgt::DeviceDescriptor};
+                use wgpu::{Features, GlBackendOptions, Limits, wgt::DeviceDescriptor};
 
                 let display = egl
                     .get_display(egl::DEFAULT_DISPLAY)
@@ -138,6 +138,7 @@ impl RenderThread {
                             max_storage_buffers_per_shader_stage: 4,
                             ..Default::default()
                         },
+                        required_features: Features::SHADER_F64,
                         ..Default::default()
                     })
                     .await

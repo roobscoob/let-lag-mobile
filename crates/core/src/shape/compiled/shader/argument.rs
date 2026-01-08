@@ -12,16 +12,12 @@ impl IntoShaderArgument for geo::Point {
         let x = (self.x() * COORD_SCALE as f64).round() as i32;
         let y = (self.y() * COORD_SCALE as f64).round() as i32;
 
-        let offset = buffer.len() as u32;
+        // Offset in u32 indices (array<u32> has 4-byte elements)
+        let offset = (buffer.len() / 4) as u32;
+
         buffer.extend_from_slice(&x.to_le_bytes());
         buffer.extend_from_slice(&y.to_le_bytes());
 
-        vec![
-            ShaderArgument { offset, length: 1 },
-            ShaderArgument {
-                offset: offset + 8,
-                length: 1,
-            },
-        ]
+        vec![ShaderArgument { offset, length: 2 }]
     }
 }

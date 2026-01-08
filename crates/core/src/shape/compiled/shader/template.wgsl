@@ -1,3 +1,5 @@
+enable f64;
+
 @fragment
 fn main(@builtin(position) frag_coord: vec4<f32>) -> @location(0) i32 {
     // frag_coord is in pixel coordinates [0, 256)
@@ -31,7 +33,7 @@ struct TileBounds {
 var<storage, read> arguments: array<ShaderArgument>;
 
 @group(0) @binding(1)
-var<storage, read> argument_data: array<u64>;
+var<storage, read> argument_data: array<u32>;
 
 @group(0) @binding(2)
 var<uniform> tile_bounds: TileBounds;
@@ -59,30 +61,15 @@ fn popArgument(idx_ptr: ptr<function, u32>) -> ShaderArgument {
 }
 
 fn argument_read_u32(argument: ShaderArgument, index: u32) -> u32 {
-    let value = argument_data[argument.offset + index];
-    return bitcast<u32>(u32(value & 0xFFFFFFFF));
-}
-
-fn argument_read_i32(argument: ShaderArgument, index: u32) -> i32 {
-    let value = argument_data[argument.offset + index];
-    return bitcast<i32>(u32(value & 0xFFFFFFFF));
-}
-
-fn argument_read_f32(argument: ShaderArgument, index: u32) -> f32 {
-    let value = argument_data[argument.offset + index];
-    return bitcast<f32>(u32(value & 0xFFFFFFFF));
-}
-
-fn argument_read_u64(argument: ShaderArgument, index: u32) -> u64 {
     return argument_data[argument.offset + index];
 }
 
-fn argument_read_i64(argument: ShaderArgument, index: u32) -> i64 {
-    return bitcast<i64>(argument_data[argument.offset + index]);
+fn argument_read_i32(argument: ShaderArgument, index: u32) -> i32 {
+    return bitcast<i32>(argument_data[argument.offset + index]);
 }
 
-fn argument_read_f64(argument: ShaderArgument, index: u32) -> f64 {
-    return bitcast<f64>(argument_data[argument.offset + index]);
+fn argument_read_f32(argument: ShaderArgument, index: u32) -> f32 {
+    return bitcast<f32>(argument_data[argument.offset + index]);
 }
 
 // Instruction: Point
