@@ -105,7 +105,7 @@ impl OutOfBoundsLayer {
                     int signedVal = int(unsignedVal);
                     fragColor = vec4(
                         // todo: this is the distance... not sure how to visualize this
-                        float(signedVal) / 1000.0, 1.0, 1.0, 1.0
+                        float(signedVal) / 1000.0, 0.0, 0.0, 1.0
                     );
                 }",
             );
