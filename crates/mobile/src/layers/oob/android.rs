@@ -37,7 +37,7 @@ enum TileEntry {
 pub struct OutOfBoundsLayer {
     pos_attrib: u32,
     proj_uniform: NativeUniformLocation,
-    border_color_uniform: NativeUniformLocation,
+    // border_color_uniform: NativeUniformLocation,
     buffer: NativeBuffer,
     program: NativeProgram,
 
@@ -67,7 +67,9 @@ impl OutOfBoundsLayer {
                     uniform float zoom_level;
             
                     layout (location = 0) in vec2 a_pos;
+                    layout (location = 0) out vec2 texCoord;
                     void main() {{
+                        texCoord = a_pos;
                         gl_Position = proj * vec4(a_pos, 0.0, 1.0);
                     }}"
                 ),
@@ -80,10 +82,15 @@ impl OutOfBoundsLayer {
                 fragment_shader,
                 r"#version 300 es
 
-                uniform highp vec4 fill_color;
+                // uniform highp vec4 fill_color;
+                uniform usampler2D tile;
+                layout (location = 0) in vec2 texCoord;
                 out highp vec4 fragColor;
                 void main() {
-                    fragColor = fill_color;
+                    fragColor = vec4(
+                        float(texture(tile, texCoord).r) / float(255),
+                        0.0, 0.0, 1.0
+                    );
                 }",
             );
             gl.compile_shader(fragment_shader);
@@ -124,30 +131,24 @@ impl CustomLayer for OutOfBoundsLayer {
             let pos_attrib = gl
                 .get_attrib_location(program, "a_pos")
                 .context("no a_pos attribute")?;
-            let border_color_uniform = gl
-                .get_uniform_location(program, "fill_color")
-                .context("no fill_color uniform")?;
+            // let border_color_uniform = gl
+                // .get_uniform_location(program, "fill_color")
+                // .context("no fill_color uniform")?;
             let proj_uniform = gl
                 .get_uniform_location(program, "proj")
                 .context("no proj uniform")?;
 
-            // Vertices ordered for LINE_LOOP: counter-clockwise around perimeter
-            static BACKGROUND: [f32; 8] = [
-                0.0, 0.0, // bottom-left
-                1.0, 0.0, // bottom-right
-                1.0, 1.0, // top-right
-                0.0, 1.0, // top-left
-            ];
+            static TILE: [f32; 8] = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0];
 
             let buffer = gl.create_buffer().wrap_gl()?;
             gl.bind_buffer(ARRAY_BUFFER, Some(buffer));
-            gl.buffer_data_u8_slice(ARRAY_BUFFER, BACKGROUND.as_bytes(), STATIC_DRAW);
+            gl.buffer_data_u8_slice(ARRAY_BUFFER, TILE.as_bytes(), STATIC_DRAW);
 
             Ok(Self {
                 program,
                 pos_attrib,
                 proj_uniform,
-                border_color_uniform,
+                // border_color_uniform,
                 buffer,
 
                 active_tile_requests: HashMap::with_capacity(60),
@@ -167,13 +168,13 @@ impl CustomLayer for OutOfBoundsLayer {
             gl.disable(DEPTH_TEST);
 
             // Set border color (cornflower blue at full opacity)
-            gl.uniform_4_f32(
-                Some(&self.border_color_uniform),
-                100.0 / 255.0,
-                149.0 / 255.0,
-                237.0 / 255.0,
-                1.0,
-            );
+            // gl.uniform_4_f32(
+                // Some(&self.border_color_uniform),
+                // 100.0 / 255.0,
+                // 149.0 / 255.0,
+                // 237.0 / 255.0,
+                // 1.0,
+            // );
 
             // Set line width for the border (adjust thickness as needed)
             gl.line_width(5.0);
@@ -190,6 +191,7 @@ impl CustomLayer for OutOfBoundsLayer {
                     DVec3::new(0.0, 0.0, 0.0),
                 ),
             );
+            gl.active_texture(TEXTURE0);
 
             let draw_tile_at = |zoom: u8, x: f64, y: f64, texture: glow::Texture| {
                 let pos = (2u32.pow(zoom as u32) as f64).recip();
@@ -202,8 +204,9 @@ impl CustomLayer for OutOfBoundsLayer {
 
                 let mat = mat.to_cols_array().map(|v| v as f32);
 
+                gl.bind_texture(TEXTURE_2D, Some(texture));
                 gl.uniform_matrix_4_f32_slice(Some(&self.proj_uniform), false, &mat);
-                gl.draw_arrays(LINE_LOOP, 0, 4);
+                gl.draw_arrays(TRIANGLE_STRIP, 0, 4);
             };
 
             let zoom_level = parameters.zoom.floor() as u8;
