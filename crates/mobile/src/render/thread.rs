@@ -1,4 +1,4 @@
-use core::{mem::size_of, num::NonZero, option::Option::None};
+use core::{iter::{self, Iterator}, mem::size_of, num::NonZero, option::Option::None};
 use std::{
     collections::BTreeMap,
     default::Default,
@@ -109,7 +109,9 @@ impl RenderThread {
     async fn new(context: Option<usize>) -> Self {
         #[cfg(target_os = "android")]
         let (instance, (device, queue), adapter) = {
-            use wgpu::{DeviceDescriptor, FeaturesWGPU, FeaturesWebGPU, Limits, RequestAdapterOptions};
+            use wgpu::{
+                DeviceDescriptor, FeaturesWGPU, FeaturesWebGPU, Limits, RequestAdapterOptions,
+            };
 
             let instance = Instance::new(&wgpu::InstanceDescriptor {
                 backends: Backends::VULKAN,
@@ -127,7 +129,10 @@ impl RenderThread {
                 instance,
                 adapter
                     .request_device(&DeviceDescriptor {
-                        required_features: wgpu::Features { features_wgpu: FeaturesWGPU::empty(), features_webgpu: FeaturesWebGPU::empty() },
+                        required_features: wgpu::Features {
+                            features_wgpu: FeaturesWGPU::empty(),
+                            features_webgpu: FeaturesWebGPU::empty(),
+                        },
                         required_limits: Limits {
                             max_storage_buffers_per_shader_stage: 4,
                             ..Default::default()
@@ -204,7 +209,7 @@ impl Handler<StartShapeCompilation> for RenderThread {
                         count: None,
                     },
                     BindGroupLayoutEntry {
-                        binding: 0,
+                        binding: 1,
                         visibility: ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -214,7 +219,7 @@ impl Handler<StartShapeCompilation> for RenderThread {
                         count: None,
                     },
                     BindGroupLayoutEntry {
-                        binding: 0,
+                        binding: 2,
                         visibility: ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
@@ -267,7 +272,7 @@ impl Handler<StartShapeCompilation> for RenderThread {
                             zero_initialize_workgroup_memory: false,
                         },
                         targets: &[Some(ColorTargetState {
-                            format: TextureFormat::R32Sint,
+                            format: TextureFormat::Rgba8Unorm,
                             blend: None,
                             write_mask: ColorWrites::RED,
                         })],
@@ -313,9 +318,7 @@ impl Handler<RequestTile> for RenderThread {
                 stride: 2,
                 usage: HardwareBufferUsage::GPU_FRAMEBUFFER
                     | HardwareBufferUsage::GPU_SAMPLED_IMAGE,
-                format: HardwareBufferFormat::__Unknown(
-                    ndk_sys::AHardwareBuffer_Format::AHARDWAREBUFFER_FORMAT_R16_UINT.0 as i32,
-                ),
+                format: HardwareBufferFormat::R8G8B8A8_UNORM,
             })
             .unwrap();
 
@@ -334,7 +337,7 @@ impl Handler<RequestTile> for RenderThread {
             mip_levels: 1,
             array_layers: 1,
             image_type: vk::ImageType::TYPE_2D,
-            format: vk::Format::R16_UINT,
+            format: vk::Format::R16_SINT,
             tiling: vk::ImageTiling::OPTIMAL,
             initial_layout: vk::ImageLayout::UNDEFINED,
             usage: vk::ImageUsageFlags::COLOR_ATTACHMENT
@@ -396,8 +399,8 @@ impl Handler<RequestTile> for RenderThread {
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 memory_flags: MemoryFlags::empty(),
-                format: TextureFormat::R16Uint,
-                view_formats: vec![TextureFormat::R16Uint],
+                format: TextureFormat::Rgba8Unorm,
+                view_formats: vec![TextureFormat::Rgba8Unorm],
             };
             let texture = hal_device.texture_from_raw(
                 image,
@@ -433,15 +436,21 @@ impl Handler<RequestTile> for RenderThread {
             let arguments = shape
                 .compiled_shape
                 .fill_arguments(&mut contents, &msg.tile);
+
+            let alignment = self.device.limits().min_storage_buffer_offset_alignment as usize;
+            contents.extend(iter::repeat(0).take(alignment - (contents.len() % alignment)));
             let arguments_offset: u64 = contents.len() as u64;
             contents.extend(arguments.as_bytes());
-            let uniform_offset: u64 = contents.len() as u64;
-            contents.extend(msg.tile.into_bounds().as_bytes());
 
-            let buffer = self.device.create_buffer_init(&BufferInitDescriptor {
+            let storage_buffer = self.device.create_buffer_init(&BufferInitDescriptor {
                 label: None,
                 contents: &contents,
                 usage: BufferUsages::STORAGE,
+            });
+            let uniform_buffer = self.device.create_buffer_init(&BufferInitDescriptor {
+                label: None,
+                contents: msg.tile.into_bounds().as_bytes(),
+                usage: BufferUsages::UNIFORM,
             });
             let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: None,
@@ -450,7 +459,7 @@ impl Handler<RequestTile> for RenderThread {
                     BindGroupEntry {
                         binding: 0,
                         resource: wgpu::BindingResource::Buffer(BufferBinding {
-                            buffer: &buffer,
+                            buffer: &storage_buffer,
                             offset: 0,
                             size: NonZero::new(arguments_offset),
                         }),
@@ -458,7 +467,7 @@ impl Handler<RequestTile> for RenderThread {
                     BindGroupEntry {
                         binding: 1,
                         resource: wgpu::BindingResource::Buffer(BufferBinding {
-                            buffer: &buffer,
+                            buffer: &storage_buffer,
                             offset: arguments_offset as u64,
                             size: NonZero::new(arguments.as_bytes().len() as u64),
                         }),
@@ -466,8 +475,8 @@ impl Handler<RequestTile> for RenderThread {
                     BindGroupEntry {
                         binding: 2,
                         resource: wgpu::BindingResource::Buffer(BufferBinding {
-                            buffer: &buffer,
-                            offset: uniform_offset as u64,
+                            buffer: &uniform_buffer,
+                            offset: 0,
                             size: NonZero::new(size_of::<TileBounds>() as u64),
                         }),
                     },

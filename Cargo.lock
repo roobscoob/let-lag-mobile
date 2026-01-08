@@ -2931,6 +2931,7 @@ dependencies = [
  "serde",
  "strum 0.27.2",
  "tokio",
+ "tracing",
  "twox-hash",
  "unicode-segmentation",
  "wgpu",

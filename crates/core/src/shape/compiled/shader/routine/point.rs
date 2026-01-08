@@ -68,9 +68,11 @@ pub fn compile_point(
         Span::UNDEFINED,
     );
 
+    // let emit_start = module.functions[into].expressions.len();
     let var_ptr = module.functions[into]
         .expressions
         .append(Expression::LocalVariable(result_var), Span::UNDEFINED);
+    // let emit_range = module.functions[into].expressions.range_from(emit_start);
 
     // Store call result in variable
     module.functions[into].body.push(

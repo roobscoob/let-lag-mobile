@@ -23,6 +23,7 @@ rusqlite = { version = "0.38.0", features = ["modern-full"] }
 serde = { version = "1", features = ["derive"] }
 strum = { version = "0.27.2", features = ["derive", "phf", "strum_macros"] }
 tokio = { version = "1.49.0", features = ["full"] }
+tracing = "0.1.44"
 twox-hash = "2.1.2"
 unicode-segmentation = { version = "1.12.0" }
 wgpu = { version = "28.0.0", features = ["naga-ir"] }

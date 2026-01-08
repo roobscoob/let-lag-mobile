@@ -9,12 +9,13 @@ use std::{
 };
 
 use naga::{
-    ScalarKind, Span, TypeInner,
+    Block, ScalarKind, Span, TypeInner,
     front::wgsl,
     valid::{Capabilities, ValidationFlags},
 };
 use strum::IntoDiscriminant;
-use zerocopy::{FromBytes, IntoBytes, KnownLayout, Immutable};
+use tracing::debug;
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::shape::{
     compiled::shader::routine::{RoutineResult, point::compile_point},
@@ -85,6 +86,10 @@ impl ShapeShader {
             .map(|(h, _)| h)
             .expect("compute function not found");
 
+        let compute_function = module.functions.get_mut(compute_handle);
+
+        compute_function.body = Block::new();
+
         let mut registers = HashMap::<Register, naga::Handle<naga::LocalVariable>>::new();
 
         for (index, instruction) in instructions.enumerate() {
@@ -146,13 +151,22 @@ impl ShapeShader {
             binding: None,
         });
 
+        debug!(
+            "{:?} vs {i32_type:?}",
+            compute_function.local_variables.get_mut(output)
+        );
         let pointer = compute_function
             .expressions
             .append(naga::Expression::LocalVariable(output), Span::UNDEFINED);
 
+        let emit_start = compute_function.expressions.len();
         let output = compute_function
             .expressions
             .append(naga::Expression::Load { pointer }, Span::UNDEFINED);
+        let emit_range = compute_function.expressions.range_from(emit_start);
+        compute_function
+            .body
+            .push(naga::Statement::Emit(emit_range), Span::UNDEFINED);
 
         compute_function.body.push(
             naga::Statement::Return {
@@ -160,6 +174,7 @@ impl ShapeShader {
             },
             Span::UNDEFINED,
         );
+        debug!("{:#?}", compute_function.body);
 
         let hash = hasher.finish();
 

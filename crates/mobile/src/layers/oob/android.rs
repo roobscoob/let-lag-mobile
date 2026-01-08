@@ -92,12 +92,20 @@ impl OutOfBoundsLayer {
                 r"#version 300 es
 
                 // uniform highp vec4 fill_color;
-                uniform usampler2D tile;
+                uniform sampler2D tile;
                 layout (location = 0) in vec2 texCoord;
                 out highp vec4 fragColor;
                 void main() {
+                    vec4 texel = texture(tile, texCoord); // todo: use texelFetch?
+                    uint byte0 = uint(texel.r * 255.0 + 0.5);
+                    uint byte1 = uint(texel.g * 255.0 + 0.5);
+                    uint byte2 = uint(texel.b * 255.0 + 0.5);
+                    uint byte3 = uint(texel.a * 255.0 + 0.5);
+                    uint unsignedVal = byte0 | (byte1 << 8) | (byte2 << 16) | (byte3 << 24);
+                    int signedVal = int(unsignedVal);
                     fragColor = vec4(
-                        float(texture(tile, texCoord).r), 1.0, 1.0, 1.0
+                        // todo: this is the distance... not sure how to visualize this
+                        float(signedVal) / 1000.0, 1.0, 1.0, 1.0
                     );
                 }",
             );
@@ -331,7 +339,7 @@ impl CustomLayer for OutOfBoundsLayer {
                                 use khronos_egl as egl;
                                 let create_image_khr: extern "C" fn(
                                     egl::Display,
-                                    Option<egl::Context>,
+                                    egl::Context,
                                     u32,
                                     *mut ffi::c_void,
                                     *const i32,
@@ -343,15 +351,16 @@ impl CustomLayer for OutOfBoundsLayer {
                                 const EGL_NATIVE_BUFFER_ANDROID: u32 = 0x3140;
                                 const EGL_IMAGE_PRESERVED_KHR: i32 = 0x30D2;
 
+                                let attrib_list = [EGL_IMAGE_PRESERVED_KHR, 1, egl::NONE as i32];
                                 let image = create_image_khr(
                                     egl.get_current_display().unwrap(),
-                                    None,
+                                    egl::Context::from_ptr(egl::NO_CONTEXT),
                                     EGL_NATIVE_BUFFER_ANDROID,
                                     client_buffer,
-                                    [EGL_IMAGE_PRESERVED_KHR, 1, egl::NONE as i32].as_ptr(),
+                                    attrib_list.as_ptr(),
                                 );
                                 if image.as_ptr().is_null() {
-                                    panic!("Failed to create EGLImage");
+                                    panic!("Failed to create EGLImage {:?}", egl.get_error());
                                 }
 
                                 let gl_egl_image_target_texture_2d: extern "C" fn(u32, egl::Image) =
@@ -368,14 +377,21 @@ impl CustomLayer for OutOfBoundsLayer {
                                     panic!("got error while bidning texture to image: {error}")
                                 }
 
-                                let _ = self
-                                    .active_tile_requests
-                                    .insert(request_params, TileEntry::Loaded { hardware_buffer, texture });
+                                let _ = self.active_tile_requests.insert(
+                                    request_params,
+                                    TileEntry::Loaded {
+                                        hardware_buffer,
+                                        texture,
+                                    },
+                                );
                             }
                             core::task::Poll::Pending => {}
                         }
                     }
-                    Some(TileEntry::Loaded { hardware_buffer, texture }) => {
+                    Some(TileEntry::Loaded {
+                        hardware_buffer,
+                        texture,
+                    }) => {
                         draw_tile_at(tile.zoom, tile.x0, tile.y0, *texture);
                     }
                     None => {
