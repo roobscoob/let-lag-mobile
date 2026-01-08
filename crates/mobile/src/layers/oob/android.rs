@@ -8,7 +8,7 @@ use crate::{
         oob::{
             RENDER_SESSION,
             culling::{AABB, Frustum},
-            traverse_quadtree::{Tile, TileAction, traverse_quadtree},
+            traverse_quadtree::{TileAction, traverse_quadtree},
         },
     },
     render::thread::{RenderThread, RequestTile, StartShapeCompilation},
@@ -17,7 +17,7 @@ use actix::{Addr, dev::Request};
 use eyre::{ContextCompat, OptionExt, WrapErr, bail};
 use glam::{DMat4, DQuat, DVec3, dvec3, dvec4};
 use glow::{HasContext, NativeBuffer, NativeProgram, NativeUniformLocation};
-use jet_lag_core::shape::compiler::Register;
+use jet_lag_core::{map::tile::Tile, shape::compiler::Register};
 use pollster::FutureExt;
 use wgpu_hal::gles::TextureInner;
 use zerocopy::IntoBytes;
@@ -314,7 +314,10 @@ impl CustomLayer for OutOfBoundsLayer {
                     Some(TileEntry::Loaded { texture }) => {
                         let hal_texture = texture.as_hal::<wgpu_hal::api::Gles>().unwrap();
                         let TextureInner::Texture { raw, target } = &hal_texture.inner else {
-                            unreachable!("render thread created incorrect type of texture {:#?}", hal_texture.inner)
+                            unreachable!(
+                                "render thread created incorrect type of texture {:#?}",
+                                hal_texture.inner
+                            )
                         };
 
                         draw_tile_at(tile.zoom, tile.x0, tile.y0, *raw);

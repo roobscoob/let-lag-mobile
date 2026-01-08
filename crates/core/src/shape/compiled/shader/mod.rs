@@ -1,4 +1,5 @@
 pub mod argument;
+pub mod cache;
 pub mod routine;
 
 use std::{
@@ -36,10 +37,10 @@ pub struct ShaderArgument {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, FromBytes, IntoBytes)]
 pub struct TileBounds {
-    min_lat_deg: f32,
-    min_lon_deg: f32,
-    lat_span_deg: f32,
-    lon_span_deg: f32,
+    pub min_lat_deg: f32,
+    pub min_lon_deg: f32,
+    pub lat_span_deg: f32,
+    pub lon_span_deg: f32,
 }
 
 impl Ord for ShaderSlot {
@@ -58,12 +59,14 @@ impl PartialOrd for ShaderSlot {
 
 pub struct ShapeShader {
     hash: u64,
-    module: naga::Module,
+    module: wgpu::ShaderModule,
     required_slots: Vec<ShaderSlot>,
 }
 
 impl ShapeShader {
     pub fn compile<'a>(
+        device: &wgpu::Device,
+        cache: &mut crate::shape::compiled::shader::cache::ShaderCache,
         instructions: impl Iterator<Item = &'a SdfInstruction>,
         result: Register,
     ) -> Result<Self, ()> {
@@ -154,10 +157,24 @@ impl ShapeShader {
             Span::UNDEFINED,
         );
 
+        let hash = hasher.finish();
+
         Ok(ShapeShader {
-            hash: hasher.finish(),
-            module,
+            hash,
+            module: cache.get_or_create(hash, module, device),
             required_slots,
         })
+    }
+
+    pub fn hash(&self) -> u64 {
+        self.hash
+    }
+
+    pub fn required_slots(&self) -> &Vec<ShaderSlot> {
+        &self.required_slots
+    }
+
+    pub fn module(&self) -> &wgpu::ShaderModule {
+        &self.module
     }
 }

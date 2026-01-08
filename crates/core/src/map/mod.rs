@@ -1,3 +1,5 @@
+pub mod tile;
+
 use std::sync::Arc;
 
 use crate::resource::bundle::ResourceBundle;
