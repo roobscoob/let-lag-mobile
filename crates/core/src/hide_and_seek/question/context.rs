@@ -25,7 +25,7 @@ pub struct PathSegment {
     pub positions: geo::LineString,
 }
 
-pub trait QuestionContext {
+pub trait QuestionContext: Send {
     fn game_state(&self) -> &GameState;
     fn transit_context(&self) -> &dyn TransitProvider;
 

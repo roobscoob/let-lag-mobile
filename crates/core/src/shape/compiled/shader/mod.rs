@@ -8,7 +8,11 @@ use std::{
     sync::LazyLock,
 };
 
-use naga::{ScalarKind, Span, TypeInner, front::wgsl};
+use naga::{
+    ScalarKind, Span, TypeInner,
+    front::wgsl,
+    valid::{Capabilities, ValidationFlags},
+};
 use strum::IntoDiscriminant;
 use zerocopy::{FromBytes, IntoBytes};
 

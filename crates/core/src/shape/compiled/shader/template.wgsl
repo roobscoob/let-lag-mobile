@@ -1,3 +1,20 @@
+@fragment
+fn main(@builtin(position) frag_coord: vec4<f32>) -> @location(0) i32 {
+    // frag_coord is in pixel coordinates [0, 256)
+    // Convert to [0,1] tile-local coordinates
+    let sample = frag_coord.xy / 256.0;
+    
+    // Call point with our sample
+    var arg_idx = 0u;
+    let distance_cm = compute(sample, &arg_idx);
+    
+    return distance_cm;
+}
+
+fn compute(sample: vec2<f32>, idx_ptr: ptr<function, u32>) -> i32 {
+    // filled in by code generator
+}
+
 struct ShaderArgument {
     offset: u32,
     length: u32,
@@ -66,6 +83,59 @@ fn argument_read_i64(argument: ShaderArgument, index: u32) -> i64 {
 
 fn argument_read_f64(argument: ShaderArgument, index: u32) -> f64 {
     return bitcast<f64>(argument_data[argument.offset + index]);
+}
+
+// Instruction: Point
+fn point(sample: vec2<f32>, idx_ptr: ptr<function, u32>) -> i32 {
+    let argument = popArgument(idx_ptr);
+    let x = argument_read_i32(argument, 0u);
+    let y = argument_read_i32(argument, 1u);
+    
+    var distance_m: f32;
+
+    if (USE_HIGH_PRECISION) {
+        // Compute sample coords in scaled space, then divide once
+        let sample_lon_scaled = f64(tile_bounds.min_lon_deg) + f64(sample.x) * f64(tile_bounds.lon_span_deg);
+        let sample_lat_scaled = f64(tile_bounds.min_lat_deg) + f64(sample.y) * f64(tile_bounds.lat_span_deg);
+
+        if (USE_ELLIPSOID) {
+            distance_m = f32(vincenty_distance_f64(
+                sample_lat_scaled / f64(COORD_SCALE), 
+                sample_lon_scaled / f64(COORD_SCALE),
+                f64(y) / f64(COORD_SCALE), 
+                f64(x) / f64(COORD_SCALE)
+            ));
+        } else {
+            distance_m = f32(haversine_distance_f64(
+                sample_lat_scaled / f64(COORD_SCALE), 
+                sample_lon_scaled / f64(COORD_SCALE),
+                f64(y) / f64(COORD_SCALE), 
+                f64(x) / f64(COORD_SCALE)
+            ));
+        }
+    } else {
+        // f32 path
+        let sample_lon_scaled = f32(tile_bounds.min_lon_deg) + sample.x * f32(tile_bounds.lon_span_deg);
+        let sample_lat_scaled = f32(tile_bounds.min_lat_deg) + sample.y * f32(tile_bounds.lat_span_deg);
+
+        if (USE_ELLIPSOID) {
+            distance_m = vincenty_distance(
+                sample_lat_scaled / f32(COORD_SCALE),
+                sample_lon_scaled / f32(COORD_SCALE),
+                f32(y) / f32(COORD_SCALE),
+                f32(x) / f32(COORD_SCALE)
+            );
+        } else {
+            distance_m = haversine_distance(
+                sample_lat_scaled / f32(COORD_SCALE),
+                sample_lon_scaled / f32(COORD_SCALE),
+                f32(y) / f32(COORD_SCALE),
+                f32(x) / f32(COORD_SCALE)
+            );
+        }
+    }
+    
+    return i32(distance_m * 100.0);
 }
 
 // ============================================================================
@@ -240,76 +310,4 @@ fn vincenty_distance_f64(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
                       (-3.0 + 4.0 * cos2SigmaM * cos2SigmaM)));
     
     return WGS84_B_F64 * A * (sigma - deltaSigma);
-}
-
-
-
-// Instruction: Point
-fn point(sample: vec2<f32>, idx_ptr: ptr<function, u32>) -> i32 {
-    let argument = popArgument(idx_ptr);
-    let x = argument_read_i32(argument, 0u);
-    let y = argument_read_i32(argument, 1u);
-    
-    var distance_m: f32;
-
-    if (USE_HIGH_PRECISION) {
-        // Compute sample coords in scaled space, then divide once
-        let sample_lon_scaled = f64(tile_bounds.min_lon_deg) + f64(sample.x) * f64(tile_bounds.lon_span_deg);
-        let sample_lat_scaled = f64(tile_bounds.min_lat_deg) + f64(sample.y) * f64(tile_bounds.lat_span_deg);
-
-        if (USE_ELLIPSOID) {
-            distance_m = f32(vincenty_distance_f64(
-                sample_lat_scaled / f64(COORD_SCALE), 
-                sample_lon_scaled / f64(COORD_SCALE),
-                f64(y) / f64(COORD_SCALE), 
-                f64(x) / f64(COORD_SCALE)
-            ));
-        } else {
-            distance_m = f32(haversine_distance_f64(
-                sample_lat_scaled / f64(COORD_SCALE), 
-                sample_lon_scaled / f64(COORD_SCALE),
-                f64(y) / f64(COORD_SCALE), 
-                f64(x) / f64(COORD_SCALE)
-            ));
-        }
-    } else {
-        // f32 path
-        let sample_lon_scaled = f32(tile_bounds.min_lon_deg) + sample.x * f32(tile_bounds.lon_span_deg);
-        let sample_lat_scaled = f32(tile_bounds.min_lat_deg) + sample.y * f32(tile_bounds.lat_span_deg);
-
-        if (USE_ELLIPSOID) {
-            distance_m = vincenty_distance(
-                sample_lat_scaled / f32(COORD_SCALE),
-                sample_lon_scaled / f32(COORD_SCALE),
-                f32(y) / f32(COORD_SCALE),
-                f32(x) / f32(COORD_SCALE)
-            );
-        } else {
-            distance_m = haversine_distance(
-                sample_lat_scaled / f32(COORD_SCALE),
-                sample_lon_scaled / f32(COORD_SCALE),
-                f32(y) / f32(COORD_SCALE),
-                f32(x) / f32(COORD_SCALE)
-            );
-        }
-    }
-    
-    return i32(distance_m * 100.0);
-}
-
-fn compute(sample: vec2<f32>, idx_ptr: ptr<function, u32>) -> i32 {
-    // filled in by code generator
-}
-
-@fragment
-fn main(@builtin(position) frag_coord: vec4<f32>) -> @location(0) i32 {
-    // frag_coord is in pixel coordinates [0, 256)
-    // Convert to [0,1] tile-local coordinates
-    let sample = frag_coord.xy / 256.0;
-    
-    // Call point with our sample
-    var arg_idx = 0u;
-    let distance_cm = compute(sample, &arg_idx);
-    
-    return distance_cm;
 }

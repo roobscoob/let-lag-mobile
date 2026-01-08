@@ -16,7 +16,14 @@ use actix::{
     Actor, ActorFuture, Addr, AsyncContext, Context, Handler, Message, WrapFuture,
     fut::LocalBoxActorFuture,
 };
-use jet_lag_core::shape::{compiler::Register, instruction::SdfInstruction};
+use jet_lag_core::{
+    map::tile::Tile,
+    shape::{
+        Shape,
+        compiled::{CompiledShape, shader::cache::ShaderCache},
+        instruction::SdfInstruction,
+    },
+};
 use replace_with::replace_with_or_abort;
 use tokio::sync::oneshot;
 use wgpu::{
@@ -25,7 +32,7 @@ use wgpu::{
     PipelineCompilationOptions, PollType, PrimitiveState, PrimitiveTopology,
     RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor,
     ShaderModule, ShaderModuleDescriptor, Texture, TextureDescriptor, TextureFormat, TextureUsages,
-    TextureViewDescriptor, VertexAttribute, VertexBufferLayout, VertexState, VertexStepMode,
+    TextureViewDescriptor, VertexAttribute, VertexBufferLayout, VertexState, VertexStepMode, naga,
 };
 use wgpu_hal::{Attachment, AttachmentOps, ColorAttachment};
 use zerocopy::IntoBytes;
@@ -67,7 +74,8 @@ pub struct RenderThread {
     queue: wgpu::Queue,
     vertex_shader: ShaderModule,
 
-    shapes: BTreeMap<Register, Shape>,
+    shader_cache: ShaderCache,
+    shapes: Vec<ShapeObj>,
 }
 
 impl RenderThread {
@@ -146,100 +154,109 @@ impl RenderThread {
             device,
             queue,
             vertex_shader,
-            shapes: BTreeMap::new(),
+
+            shader_cache: ShaderCache::new(),
+            shapes: Vec::new(),
         }
     }
 }
 
 impl Actor for RenderThread {
     type Context = Context<Self>;
-}
 
-struct Shape {
-    register: Register,
-    needs_iterations: bool,
-    render_pipeline: RenderPipeline,
-}
-
-#[derive(Message)]
-#[rtype(result = "()")]
-pub struct StartShapeCompilation {
-    pub register: Register,
-}
-
-impl Handler<StartShapeCompilation> for RenderThread {
-    type Result = ();
-
-    fn handle(&mut self, msg: StartShapeCompilation, ctx: &mut Self::Context) -> Self::Result {
+    fn started(&mut self, ctx: &mut Self::Context) {
         ctx.run_interval(Duration::from_millis(15), |actor, _| {
             let _ = actor.device.poll(PollType::Poll);
         });
-        let l = self.device.create_shader_module(ShaderModuleDescriptor {
-            source: wgpu::ShaderSource::Wgsl(include_str!("./fragment.wgsl").into()),
-            label: None,
+    }
+}
+
+struct ShapeObj {
+    compiled_shape: CompiledShape,
+    no_ellipsoid_low_prec: RenderPipeline,
+    no_ellipsoid_high_prec: RenderPipeline,
+    use_ellipsoid_low_prec: RenderPipeline,
+    use_ellipsoid_high_prec: RenderPipeline,
+}
+
+#[derive(Message)]
+#[rtype(result = "u64")]
+pub struct StartShapeCompilation {
+    pub shape: Box<dyn Shape>,
+}
+
+impl Handler<StartShapeCompilation> for RenderThread {
+    type Result = u64;
+
+    fn handle(&mut self, msg: StartShapeCompilation, _ctx: &mut Self::Context) -> Self::Result {
+        let shape = CompiledShape::compile(&self.device, &mut self.shader_cache, &*msg.shape);
+
+        let create_render_pipeline = |ellipsoid: bool, high_prec: bool| {
+            self.device
+                .create_render_pipeline(&RenderPipelineDescriptor {
+                    label: None,
+                    layout: None,
+                    vertex: VertexState {
+                        buffers: &[],
+                        compilation_options: PipelineCompilationOptions::default(),
+                        entry_point: Some("vtx_main"),
+                        module: &self.vertex_shader,
+                    },
+                    primitive: PrimitiveState {
+                        topology: PrimitiveTopology::TriangleStrip,
+                        strip_index_format: None,
+                        front_face: wgpu::FrontFace::Cw,
+                        cull_mode: None, // todo: face culling
+                        unclipped_depth: false,
+                        polygon_mode: wgpu::PolygonMode::Fill,
+                        conservative: false,
+                    },
+                    depth_stencil: None,
+                    multisample: MultisampleState::default(),
+                    fragment: Some(FragmentState {
+                        module: shape.shader(),
+                        entry_point: Some("main"),
+                        compilation_options: PipelineCompilationOptions {
+                            constants: &[
+                                ("USE_ELLIPSOID", if ellipsoid { 1.0 } else { 0.0 }),
+                                ("USE_HIGH_PRECISION", if high_prec { 1.0 } else { 0.0 }),
+                            ],
+                            zero_initialize_workgroup_memory: false,
+                        },
+                        targets: &[Some(ColorTargetState {
+                            format: TextureFormat::R32Sint,
+                            blend: None,
+                            write_mask: ColorWrites::RED,
+                        })],
+                    }),
+                    multiview_mask: None,
+                    cache: None,
+                })
+        };
+
+        let id = shape.id();
+        self.shapes.push(ShapeObj {
+            no_ellipsoid_low_prec: create_render_pipeline(false, false),
+            no_ellipsoid_high_prec: create_render_pipeline(false, true),
+            use_ellipsoid_low_prec: create_render_pipeline(true, false),
+            use_ellipsoid_high_prec: create_render_pipeline(true, true),
+            compiled_shape: shape,
         });
 
-        let render_pipeline = self
-            .device
-            .create_render_pipeline(&RenderPipelineDescriptor {
-                label: None,
-                layout: None,
-                vertex: VertexState {
-                    buffers: &[],
-                    compilation_options: PipelineCompilationOptions::default(),
-                    entry_point: Some("vtx_main"),
-                    module: &self.vertex_shader,
-                },
-                primitive: PrimitiveState {
-                    topology: PrimitiveTopology::TriangleStrip,
-                    strip_index_format: None,
-                    front_face: wgpu::FrontFace::Cw,
-                    cull_mode: None, // todo: face culling
-                    unclipped_depth: false,
-                    polygon_mode: wgpu::PolygonMode::Fill,
-                    conservative: false,
-                },
-                depth_stencil: None,
-                multisample: MultisampleState::default(),
-                fragment: Some(FragmentState {
-                    module: &l,
-                    entry_point: Some("frag_main"),
-                    compilation_options: PipelineCompilationOptions::default(),
-                    targets: &[Some(ColorTargetState {
-                        format: TextureFormat::R32Uint,
-                        blend: None,
-                        write_mask: ColorWrites::RED,
-                    })],
-                }),
-                multiview_mask: None,
-                cache: None,
-            });
-
-        self.shapes.insert(
-            msg.register,
-            Shape {
-                register: msg.register,
-                needs_iterations: false,
-                render_pipeline,
-            },
-        );
+        id
     }
 }
 
 #[derive(Message)]
 #[rtype(result = "wgpu::Texture")]
 pub struct RequestTile {
-    pub x: u32,
-    pub y: u32,
-    pub z: u8,
-    pub shape: Register,
+    pub tile: Tile,
 }
 
 impl Handler<RequestTile> for RenderThread {
     type Result = LocalBoxActorFuture<Self, wgpu::Texture>;
 
-    fn handle(&mut self, msg: RequestTile, ctx: &mut Self::Context) -> Self::Result {
-        let shape: &Shape = self.shapes.get(&msg.shape).expect("shape wasn't compiled");
+    fn handle(&mut self, msg: RequestTile, _ctx: &mut Self::Context) -> Self::Result {
         let texture = self.device.create_texture(&TextureDescriptor {
             label: None,
             size: Extent3d {
@@ -257,27 +274,30 @@ impl Handler<RequestTile> for RenderThread {
         let mut encoder = self
             .device
             .create_command_encoder(&CommandEncoderDescriptor::default());
-        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-            color_attachments: &[Some(RenderPassColorAttachment {
-                ops: Operations {
-                    load: wgpu::LoadOp::DontCare(unsafe { LoadOpDontCare::enabled() }),
-                    store: wgpu::StoreOp::Store,
-                },
-                view: &texture.create_view(&TextureViewDescriptor {
-                    ..Default::default()
-                }),
-                depth_slice: None,
-                resolve_target: None,
-            })],
-            label: None,
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
 
-        pass.set_pipeline(&shape.render_pipeline);
-        pass.draw(0..4, 0..1);
+        for shape in &self.shapes {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    ops: Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                    view: &texture.create_view(&TextureViewDescriptor {
+                        ..Default::default()
+                    }),
+                    depth_slice: None,
+                    resolve_target: None,
+                })],
+                label: None,
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+
+            pass.set_pipeline(&shape.use_ellipsoid_low_prec);
+            pass.draw(0..4, 0..1);
+        }
 
         enum State {
             ToSubmit(CommandEncoder),
@@ -333,7 +353,6 @@ impl Handler<RequestTile> for RenderThread {
             }
         }
 
-        drop(pass);
         Box::pin(Impl {
             state: State::ToSubmit(encoder),
             texture: Some(texture),

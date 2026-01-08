@@ -7,20 +7,21 @@ use jet_lag_core::shape::{
 
 use crate::render::{
     style::Style,
-    thread::{RenderThread, start_render_thread},
+    thread::{RenderThread, StartShapeCompilation, start_render_thread},
 };
 
 pub mod style;
 pub mod thread;
 
 pub struct RenderHandle {
-    register: Register,
+    id: u64,
     style: Style,
 }
 
 pub struct RenderSession {
     pub render_thread: Addr<RenderThread>,
-    compiler: SdfCompiler,
+    
+
 }
 
 impl RenderSession {
@@ -29,20 +30,22 @@ impl RenderSession {
         let compiler = SdfCompiler::new();
         Self {
             render_thread,
-            compiler,
         }
     }
 
-    pub fn test(&mut self) -> Register {
-        let register = self.compiler.point(Point::new(0.0, 0.0));
+    // pub fn test(&mut self) -> Register {
+    //     // let register = self.compiler.point(Point::new(0.0, 0.0));
 
-        register
-    }
+    //     // register
+    // }
 
-    pub fn append_shape(&mut self, shape: &dyn Shape, style: Style) -> RenderHandle {
-        let register = shape.build_into(&mut self.compiler);
+    pub async fn append_shape(&mut self, shape: Box<dyn Shape>, style: Style) -> RenderHandle {
+        let id = self.render_thread.send(StartShapeCompilation { shape }).await.expect("render thread shut down unexpectedly");
 
-        todo!()
+        RenderHandle {
+            id,
+            style,
+        }
     }
 }
 

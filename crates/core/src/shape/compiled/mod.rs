@@ -63,6 +63,10 @@ impl CompiledShape {
         &self.shader.module()
     }
 
+    pub fn id(&self) -> u64 {
+        self.compilation_id
+    }
+
     pub fn fill_arguments(&self, buffer: &mut Vec<u8>, tile: Tile) -> Vec<ShaderArgument> {
         let mut shader_arguments = Vec::new();
 

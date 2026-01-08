@@ -1,5 +1,5 @@
 use core::{future::Future, pin::Pin, task::Waker};
-use std::{collections::HashMap, sync::OnceLock};
+use std::{collections::HashMap, sync::{Once, OnceLock}};
 
 use crate::{
     android::gl::{GlResult, get_gl_context},
@@ -15,9 +15,13 @@ use crate::{
 };
 use actix::{Addr, dev::Request};
 use eyre::{ContextCompat, OptionExt, WrapErr, bail};
+use geo::Point;
 use glam::{DMat4, DQuat, DVec3, dvec3, dvec4};
 use glow::{HasContext, NativeBuffer, NativeProgram, NativeUniformLocation};
-use jet_lag_core::{map::tile::Tile, shape::compiler::Register};
+use jet_lag_core::{
+    map::tile::Tile,
+    shape::{Shape, builtin::circle::Circle, compiler::Register},
+};
 use pollster::FutureExt;
 use wgpu_hal::gles::TextureInner;
 use zerocopy::IntoBytes;
@@ -88,8 +92,7 @@ impl OutOfBoundsLayer {
                 out highp vec4 fragColor;
                 void main() {
                     fragColor = vec4(
-                        float(texture(tile, texCoord).r) / float(255),
-                        0.0, 0.0, 1.0
+                        float(texture(tile, texCoord).r), 1.0, 1.0, 1.0
                     );
                 }",
             );
@@ -132,8 +135,8 @@ impl CustomLayer for OutOfBoundsLayer {
                 .get_attrib_location(program, "a_pos")
                 .context("no a_pos attribute")?;
             // let border_color_uniform = gl
-                // .get_uniform_location(program, "fill_color")
-                // .context("no fill_color uniform")?;
+            // .get_uniform_location(program, "fill_color")
+            // .context("no fill_color uniform")?;
             let proj_uniform = gl
                 .get_uniform_location(program, "proj")
                 .context("no proj uniform")?;
@@ -169,11 +172,11 @@ impl CustomLayer for OutOfBoundsLayer {
 
             // Set border color (cornflower blue at full opacity)
             // gl.uniform_4_f32(
-                // Some(&self.border_color_uniform),
-                // 100.0 / 255.0,
-                // 149.0 / 255.0,
-                // 237.0 / 255.0,
-                // 1.0,
+            // Some(&self.border_color_uniform),
+            // 100.0 / 255.0,
+            // 149.0 / 255.0,
+            // 237.0 / 255.0,
+            // 1.0,
             // );
 
             // Set line width for the border (adjust thickness as needed)
@@ -294,7 +297,7 @@ impl CustomLayer for OutOfBoundsLayer {
                 }
             });
 
-            static SHAPE: OnceLock<Register> = OnceLock::new();
+            static SHAPE: Once = Once::new();
 
             for tile in tiles {
                 let tile: Tile = tile;
@@ -328,24 +331,29 @@ impl CustomLayer for OutOfBoundsLayer {
                     None => {
                         let mut guard = RENDER_SESSION.lock().unwrap();
 
-                        let register = SHAPE.get_or_init(|| {
-                            let register: Register = guard.test();
+                        SHAPE.call_once(|| {
                             let thread: &Addr<RenderThread> = &guard.render_thread;
+                            struct Point;
+                            impl Shape for Point {
+                                fn build_into(
+                                    &self,
+                                    compiler: &mut jet_lag_core::shape::compiler::SdfCompiler,
+                                ) -> jet_lag_core::shape::compiler::Register
+                                {
+                                    compiler.point(geo::Point::new(40.7571418, -73.9805655))
+                                }
+                            }
                             thread
-                                .send(StartShapeCompilation { register })
+                                .send(StartShapeCompilation {
+                                    shape: Box::new(Point),
+                                })
                                 .block_on()
                                 .unwrap();
-                            register
                         });
 
                         let thread: &Addr<RenderThread> = &guard.render_thread;
 
-                        let request = thread.send(RequestTile {
-                            x: tile.tile_x,
-                            y: tile.tile_y,
-                            z: tile.zoom,
-                            shape: *register,
-                        });
+                        let request = thread.send(RequestTile { tile });
 
                         let sent_request = request;
                         self.active_tile_requests.insert(
