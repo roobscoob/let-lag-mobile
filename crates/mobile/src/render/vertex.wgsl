@@ -1,4 +1,3 @@
-@binding(0) @group(0) var<uniform> frame : u32;
 @vertex
 fn vtx_main(@builtin(vertex_index) vertex_index : u32) -> @builtin(position) vec4f {
   const pos = array(

@@ -12,7 +12,7 @@ impl ShaderCache {
     }
 
     pub fn get_or_create(
-        &self,
+        &mut self,
         hash: u64,
         module: naga::Module,
         device: &wgpu::Device,
@@ -25,6 +25,8 @@ impl ShaderCache {
             label: Some("Shape Shader Module"),
             source: wgpu::ShaderSource::Naga(Cow::Owned(module)),
         });
+
+        self.cache.insert(hash, shader_module.clone());
 
         shader_module
     }

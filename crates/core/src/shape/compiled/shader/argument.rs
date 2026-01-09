@@ -4,7 +4,7 @@ pub trait IntoShaderArgument {
     fn into_shader_argument(&self, buffer: &mut Vec<u8>, tile: &Tile) -> Vec<ShaderArgument>;
 }
 
-const COORD_SCALE: i32 = 10_000_000;
+pub const COORD_SCALE: i32 = 10_000_000;
 
 impl IntoShaderArgument for geo::Point {
     fn into_shader_argument(&self, buffer: &mut Vec<u8>, _tile: &Tile) -> Vec<ShaderArgument> {

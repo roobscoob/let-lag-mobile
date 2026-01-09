@@ -1,4 +1,4 @@
-use crate::shape::compiled::shader::TileBounds;
+use crate::shape::compiled::shader::{TileBounds, argument::COORD_SCALE};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Tile {
@@ -85,10 +85,10 @@ impl Tile {
         let min_lat_deg = ((PI - 2.0 * PI * self.y1).sinh().atan() * 180.0 / PI) as f32;
 
         TileBounds {
-            min_lat_deg,
-            min_lon_deg,
-            lat_span_deg: max_lat_deg - min_lat_deg,
-            lon_span_deg: max_lon_deg - min_lon_deg,
+            min_lat_deg: (COORD_SCALE as f64 * min_lat_deg as f64) as i32,
+            min_lon_deg: (COORD_SCALE as f64 * min_lon_deg as f64) as i32,
+            lat_span_deg: (COORD_SCALE as f64 * (max_lat_deg - min_lat_deg) as f64) as i32,
+            lon_span_deg: (COORD_SCALE as f64 * (max_lon_deg - min_lon_deg) as f64) as i32,
         }
     }
 }

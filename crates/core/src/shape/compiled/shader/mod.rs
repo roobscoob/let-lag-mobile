@@ -42,10 +42,10 @@ pub struct ShaderArgument {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, FromBytes, IntoBytes, KnownLayout, Immutable)]
 pub struct TileBounds {
-    pub min_lat_deg: f32,
-    pub min_lon_deg: f32,
-    pub lat_span_deg: f32,
-    pub lon_span_deg: f32,
+    pub min_lat_deg: i32,
+    pub min_lon_deg: i32,
+    pub lat_span_deg: i32,
+    pub lon_span_deg: i32,
 }
 
 impl Ord for ShaderSlot {

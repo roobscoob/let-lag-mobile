@@ -114,7 +114,12 @@ fn vincenty_distance(lat1: f32, lon1: f32, lat2: f32, lon2: f32) -> f32 {
         sigma = atan2(sinSigma, cosSigma);
         sinAlpha = cosU1 * cosU2 * sinLambda / sinSigma;
         cos2Alpha = 1.0 - sinAlpha * sinAlpha;
-        cos2SigmaM = cosSigma - 2.0 * sinU1 * sinU2 / cos2Alpha;
+
+        if (cos2Alpha < 1e-10) {
+            cos2SigmaM = 0.0;
+        } else {
+            cos2SigmaM = cosSigma - 2.0 * sinU1 * sinU2 / cos2Alpha;
+        }
         
         // isNan
         if (cos2SigmaM != cos2SigmaM) { cos2SigmaM = 0.0; }
@@ -124,8 +129,8 @@ fn vincenty_distance(lat1: f32, lon1: f32, lat2: f32, lon2: f32) -> f32 {
         lambda = L + (1.0 - C) * WGS84_F * sinAlpha *
                  (sigma + C * sinSigma * (cos2SigmaM + C * cosSigma *
                   (-1.0 + 2.0 * cos2SigmaM * cos2SigmaM)));
-        
-        if (abs(lambda - lambda_prev) < 1e-12) { break; }
+
+        if (abs(lambda - lambda_prev) < 1e-6) { break; }
         iter += 1u;
     }
     
@@ -259,7 +264,7 @@ fn point(sample: vec2<f32>, idx_ptr: ptr<function, u32>) -> i32 {
     } else {
         // f32 path
         let sample_lon_scaled = f32(tile_bounds.min_lon_deg) + sample.x * f32(tile_bounds.lon_span_deg);
-        let sample_lat_scaled = f32(tile_bounds.min_lat_deg) + sample.y * f32(tile_bounds.lat_span_deg);
+        let sample_lat_scaled = f32(tile_bounds.min_lat_deg + tile_bounds.lat_span_deg) - sample.y * f32(tile_bounds.lat_span_deg);
 
         if (USE_ELLIPSOID) {
             distance_m = vincenty_distance(
@@ -297,9 +302,10 @@ fn main(@builtin(position) frag_coord: vec4<f32>) -> @location(0) vec4f {
     let distance_cm = bitcast<u32>(distance_cm_i32);
     
     return vec4f(
-        f32((distance_cm & 0x000000FF) >> 0),
-        f32((distance_cm & 0x0000FF00) >> 8),
-        f32((distance_cm & 0x00FF0000) >> 16),
-        f32((distance_cm & 0xFF000000) >> 24),
+        f32((distance_cm & 0x000000FF) >> 0) / 255.0,
+        f32((distance_cm & 0x0000FF00) >> 8) / 255.0,
+        f32((distance_cm & 0x00FF0000) >> 16) / 255.0,
+        // f32((distance_cm & 0xFF000000) >> 24) / 255.0,
+        1.0
     );
 }

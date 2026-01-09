@@ -1,4 +1,9 @@
-use core::{iter::{self, Iterator}, mem::size_of, num::NonZero, option::Option::None};
+use core::{
+    iter::{self, Iterator},
+    mem::size_of,
+    num::NonZero,
+    option::Option::None,
+};
 use std::{
     collections::BTreeMap,
     default::Default,
@@ -34,6 +39,7 @@ use ndk::{
 };
 use replace_with::replace_with_or_abort;
 use tokio::sync::oneshot;
+use tracing::debug;
 use wgpu::{
     Backends, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry,
     BufferBinding, BufferUsages, ColorTargetState, ColorWrites, CommandEncoder,
@@ -176,9 +182,9 @@ impl Actor for RenderThread {
 struct ShapeObj {
     compiled_shape: CompiledShape,
     bind_group_layout: BindGroupLayout,
-    // no_ellipsoid_low_prec: RenderPipeline,
+    no_ellipsoid_low_prec: RenderPipeline,
     // no_ellipsoid_high_prec: RenderPipeline,
-    use_ellipsoid_low_prec: RenderPipeline,
+    // use_ellipsoid_low_prec: RenderPipeline,
     // use_ellipsoid_high_prec: RenderPipeline,
 }
 
@@ -274,7 +280,7 @@ impl Handler<StartShapeCompilation> for RenderThread {
                         targets: &[Some(ColorTargetState {
                             format: TextureFormat::Rgba8Unorm,
                             blend: None,
-                            write_mask: ColorWrites::RED,
+                            write_mask: ColorWrites::all(),
                         })],
                     }),
                     multiview_mask: None,
@@ -284,9 +290,9 @@ impl Handler<StartShapeCompilation> for RenderThread {
 
         let id = shape.id();
         self.shapes.push(ShapeObj {
-            // no_ellipsoid_low_prec: create_render_pipeline(false, false),
+            no_ellipsoid_low_prec: create_render_pipeline(false, false),
             // no_ellipsoid_high_prec: create_render_pipeline(false, true),
-            use_ellipsoid_low_prec: create_render_pipeline(true, false),
+            // use_ellipsoid_low_prec: create_render_pipeline(true, false),
             // use_ellipsoid_high_prec: create_render_pipeline(true, true),
             bind_group_layout,
             compiled_shape: shape,
@@ -315,7 +321,7 @@ impl Handler<RequestTile> for RenderThread {
                 width: 256,
                 height: 256,
                 layers: 1,
-                stride: 2,
+                stride: 256,
                 usage: HardwareBufferUsage::GPU_FRAMEBUFFER
                     | HardwareBufferUsage::GPU_SAMPLED_IMAGE,
                 format: HardwareBufferFormat::R8G8B8A8_UNORM,
@@ -337,8 +343,8 @@ impl Handler<RequestTile> for RenderThread {
             mip_levels: 1,
             array_layers: 1,
             image_type: vk::ImageType::TYPE_2D,
-            format: vk::Format::R16_SINT,
-            tiling: vk::ImageTiling::OPTIMAL,
+            format: vk::Format::R8G8B8A8_UNORM,
+            tiling: vk::ImageTiling::LINEAR,
             initial_layout: vk::ImageLayout::UNDEFINED,
             usage: vk::ImageUsageFlags::COLOR_ATTACHMENT
                 | vk::ImageUsageFlags::TRANSFER_SRC
@@ -356,10 +362,19 @@ impl Handler<RequestTile> for RenderThread {
             let image = device
                 .create_image(&image_create_info, None)
                 .expect("failed to create image");
+
+            let dedicated_info = vk::MemoryDedicatedAllocateInfo {
+                image,
+                buffer: vk::Buffer::null(),
+                ..Default::default()
+            };
+
             let import_memory_info = vk::ImportAndroidHardwareBufferInfoANDROID {
+                p_next: &dedicated_info as *const _ as *const _, // chain dedicated info
                 buffer: hardware_buffer.as_ptr() as _,
                 ..Default::default()
             };
+
             let memory_requirements = device.get_image_memory_requirements(image);
 
             let memory_allocate_info = {
@@ -384,6 +399,12 @@ impl Handler<RequestTile> for RenderThread {
             };
 
             let device_memory = device.allocate_memory(&memory_allocate_info, None).unwrap();
+
+            let desc = hardware_buffer.describe();
+            debug!(
+                "HW Buffer: {}x{}, stride={}, format={:?}",
+                desc.width, desc.height, desc.stride, desc.format
+            );
 
             device.bind_image_memory(image, device_memory, 0).unwrap();
 
@@ -431,7 +452,7 @@ impl Handler<RequestTile> for RenderThread {
             .device
             .create_command_encoder(&CommandEncoderDescriptor::default());
 
-        for shape in &self.shapes {
+        for (i, shape) in self.shapes.iter().enumerate() {
             let mut contents: Vec<u8> = vec![];
             let arguments = shape
                 .compiled_shape
@@ -460,16 +481,16 @@ impl Handler<RequestTile> for RenderThread {
                         binding: 0,
                         resource: wgpu::BindingResource::Buffer(BufferBinding {
                             buffer: &storage_buffer,
-                            offset: 0,
-                            size: NonZero::new(arguments_offset),
+                            offset: arguments_offset as u64,
+                            size: NonZero::new(arguments.as_bytes().len() as u64),
                         }),
                     },
                     BindGroupEntry {
                         binding: 1,
                         resource: wgpu::BindingResource::Buffer(BufferBinding {
                             buffer: &storage_buffer,
-                            offset: arguments_offset as u64,
-                            size: NonZero::new(arguments.as_bytes().len() as u64),
+                            offset: 0,
+                            size: NonZero::new(arguments_offset),
                         }),
                     },
                     BindGroupEntry {
@@ -485,7 +506,10 @@ impl Handler<RequestTile> for RenderThread {
             let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
                 color_attachments: &[Some(RenderPassColorAttachment {
                     ops: Operations {
-                        load: wgpu::LoadOp::Load,
+                        load: match i {
+                            0 => wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            _ => wgpu::LoadOp::Load,
+                        },
                         store: wgpu::StoreOp::Store,
                     },
                     view: &texture.create_view(&TextureViewDescriptor {
@@ -501,7 +525,7 @@ impl Handler<RequestTile> for RenderThread {
                 multiview_mask: None,
             });
 
-            pass.set_pipeline(&shape.use_ellipsoid_low_prec);
+            pass.set_pipeline(&shape.no_ellipsoid_low_prec);
             pass.set_bind_group(0, Some(&bind_group), &[]);
             pass.draw(0..4, 0..1);
         }
