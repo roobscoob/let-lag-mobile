@@ -305,7 +305,6 @@ fn main(@builtin(position) frag_coord: vec4<f32>) -> @location(0) vec4f {
         f32((distance_cm & 0x000000FF) >> 0) / 255.0,
         f32((distance_cm & 0x0000FF00) >> 8) / 255.0,
         f32((distance_cm & 0x00FF0000) >> 16) / 255.0,
-        // f32((distance_cm & 0xFF000000) >> 24) / 255.0,
-        1.0
+        f32((distance_cm & 0xFF000000) >> 24) / 255.0,
     );
 }

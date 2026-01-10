@@ -103,10 +103,11 @@ impl OutOfBoundsLayer {
                     uint byte3 = uint(texel.a * 255.0 + 0.5);
                     uint unsignedVal = byte0 | (byte1 << 8) | (byte2 << 16) | (byte3 << 24);
                     int signedVal = int(unsignedVal);
-                    fragColor = vec4(
-                        // todo: this is the distance... not sure how to visualize this
-                        float(signedVal) / 1000.0, 0.0, 0.0, 1.0
-                    );
+                    float distCm = float(signedVal);
+                    float earthDiameterCm = 1274200000.0;
+                    float normalized = clamp(abs(distCm) / earthDiameterCm, 0.0, 1.0);
+                    float isPositive = step(0.0, distCm);
+                    fragColor = vec4(normalized * isPositive, normalized * (1.0 - isPositive), 0.0, 1.0);
                 }",
             );
             gl.compile_shader(fragment_shader);
@@ -406,7 +407,7 @@ impl CustomLayer for OutOfBoundsLayer {
                                     compiler: &mut jet_lag_core::shape::compiler::SdfCompiler,
                                 ) -> jet_lag_core::shape::compiler::Register
                                 {
-                                    compiler.point(geo::Point::new(40.7571418, -73.9805655))
+                                    compiler.point(geo::Point::new(-73.9805655, 40.7571418))
                                 }
                             }
                             thread
