@@ -92,22 +92,26 @@ impl OutOfBoundsLayer {
                 r"#version 300 es
 
                 // uniform highp vec4 fill_color;
+                precision highp int;
                 uniform sampler2D tile;
                 layout (location = 0) in vec2 texCoord;
                 out highp vec4 fragColor;
                 void main() {
-                    vec4 texel = texture(tile, texCoord); // todo: use texelFetch?
+                    vec4 texel = texelFetch(tile, ivec2(texCoord * vec2(textureSize(tile, 0))), 0);
                     uint byte0 = uint(texel.r * 255.0 + 0.5);
                     uint byte1 = uint(texel.g * 255.0 + 0.5);
                     uint byte2 = uint(texel.b * 255.0 + 0.5);
                     uint byte3 = uint(texel.a * 255.0 + 0.5);
-                    uint unsignedVal = byte0 | (byte1 << 8) | (byte2 << 16) | (byte3 << 24);
-                    int signedVal = int(unsignedVal);
-                    float distCm = float(signedVal);
-                    float earthDiameterCm = 1274200000.0;
-                    float normalized = clamp(abs(distCm) / earthDiameterCm, 0.0, 1.0);
-                    float isPositive = step(0.0, distCm);
-                    fragColor = vec4(normalized * isPositive, normalized * (1.0 - isPositive), 0.0, 1.0);
+                    uint unsignedVal = byte0 + (byte1 * 256u) + (byte2 * 65536u) + (byte3 * 16777216u);
+                    
+                    // bitcast unsignedVal to sint
+                    int signedVal = int(unsignedVal) - int(unsignedVal & 0x80000000u) * 2;
+
+                    if (signedVal < 500000) {
+                        fragColor = vec4(0.0, 0.0, 1.0, 0.0); // Blue
+                    } else {
+                        fragColor = vec4(float(signedVal) / 10000000.0, 0.0, 0.0, 1.0); // Red gradient
+                    }
                 }",
             );
             gl.compile_shader(fragment_shader);
